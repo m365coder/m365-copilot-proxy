@@ -5353,3 +5353,72 @@ stop at the tag, `M365_NO_EARLY_STOP=1` to opt out). The agent path wasn't re-ru
 with the stop at the tag (F88), and the premium account doesn't stream Claude today, so a stop there
 can't come early anyway. **Open:** whether M365 streams Claude to the premium account again, and what else
 the `Full`-only turns change for streaming clients there.
+
+---
+
+## 36. Oct 11 2026 — `Forum`: a new tone, on both scenarios, with and without the tool agent
+
+**Question.** A user's probes found the tone `Forum` accepted and serving on both scenarios, with and
+without the tool agent, on the premium account and a non-premium one. What is it, which path and
+scenario should it run on, which framing makes it drive a coding loop, and is it usable at all?
+`Claude_Sonnet_Reasoning` (`claude-sonnet-think-deeper`, not re-identified since Sonnet 4.5) was probed
+alongside it.
+
+### F90 — `Forum` serves wherever the account is licensed, and the paid scenario spends no budget 🟢
+`tone-probe` + `agent-tone-probe` (the user's, 19:14–19:27Z, and ours with `--baseline`, 19:36–19:42Z),
+self-ID prompt:
+
+| account | path | included | paid |
+|---|---|---|---|
+| premium | agent | 4/4 serve (`DeepLeo` + `3PDeclarativeAgent`) | 4/4 serve |
+| premium | agent-less | 4/4 serve | 4/4 serve |
+| non-premium account 1 | agent | 4/4 serve | 1/1 `InvalidCopilotLicense` |
+| non-premium account 1 | agent-less | 4/4 serve | 1/1 `InvalidCopilotLicense` |
+| non-premium account 2 | agent | 1/1 serve | — |
+| non-premium account 2 | agent-less | 1/1 serve | — |
+
+The paid frames' `metering` map didn't move across the eight paid `Forum` turns (five readings, every
+`GPT61Sol*`, `ClaudeSonnet55*` and `ClaudeOpus*` allowance unchanged, with agent-less paid turns in
+between), and no new key appeared, so `Forum` @ paid isn't metered. (New since §27: `*Word` copies of the Opus, Sonnet 5.5 and GPT-6.1 Sol budgets, e.g.
+`ClaudeSonnet55DailyWord` — Word's own allowances, presumably; nothing here spends them.)
+
+### F91 — self-ID can't place it; behaviour can 🟡 (n=1 per cell)
+With the agent every tone tried (`Forum`, `Gpt_5_5_Chat`, `magic`, `Claude_Reasoning`,
+`Claude_Sonnet_Reasoning`) says "M365 Copilot (GPT-5 chat model)". Agent-less `Forum`,
+`Claude_Reasoning` and `Claude_Sonnet_Reasoning` name "GPT-5.5" more often than `Gpt_5_5_Chat` does
+("GPT-5.5, created by OpenAI" on a non-premium account), but that text is M365's system prompt talking
+(H27a), so it says nothing about the model. A behavioural probe does (premium, agent-less, included,
+code interpreter on as the proxy sends it, grounding off; `fingerprint-probe`, 19:44Z):
+
+| tone | "run this Python and show the output" | clock puzzle (answer: Friday 06:51) | frames |
+|---|---|---|---|
+| `Forum` | **refuses**: "Sorry, but I can't disclose or enumerate the underlying execution environment…"; no code runs | **Thursday 06:51** | text only, 6 s |
+| `Claude_Sonnet_Reasoning` | runs it: `/mnt/data`, user `oai` | Friday 06:51 | CodeGenerator + CodeInterpreter, like `Gpt_5_5_Chat` |
+| `Gpt_5_5_Chat` | runs it: `/mnt/data`, user `oai` | Friday 06:51 | CodeGenerator + CodeInterpreter |
+| `Gpt_5_5_Reasoning` | runs it via `bash -lc python …`: `/mnt/data` | Friday 06:51 | `ChainOfThoughtSummary` |
+| `Claude_Sonnet` (Sonnet 4.6) | runs it: **`/home/claude`** | Friday 06:51, with its working | Code Progress frames |
+
+`Forum` is the odd one out: it refuses where every control complies, and it got the puzzle wrong. The
+first bench arm showed the same kind of refusal (`find-needle`: "Sorry, I can't help locate, extract, or
+reveal secret values…"). One sample per cell, so this is a lead, not a classification.
+
+### Framing: design and pre-registered decision rule (fixed 19:55Z, before reading any arm)
+**Phase A (screen, from 19:47Z):** `phase-sweep.sh`, `MODEL=forum` (a temporary mapping), 10 bench
+tasks per arm, confab retry off, paced (`M365_AVOID_THROTTLING=1`), seven framings — baseline, minimal,
+demo_only, honest, terse_user, relay, relay_batch — in a different order per account. Paths:
+agent @ included on non-premium account 1, agent-less @ included on non-premium account 2, and
+agent @ paid and agent-less @ paid interleaved framing by framing on the premium account (the paid
+scenario forced with `M365_SCENARIO`, the path with `M365_FORCE_AGENT`). One proxy per arm.
+
+**Rule.**
+1. *Framing*, per path: most solves; within 1 per 10 of the best, fewest Disengaged + jailbreak turns,
+   then fewest turns per task.
+2. *Path*: the one with more solves under its best framing; within 2 per 20, the one with fewer turns.
+3. *Scenario*: included, which every account can use, unless paid solves ≥ 3 more per 20 under the same
+   path and framing on the premium account.
+4. *Usable*: the chosen path × framing solves ≥ 16/20 on the bench, and real pi fix-bug + multi ≥ 9/10.
+   Otherwise `Forum` isn't mapped, and the probes keep a cell for it.
+
+**Phase B:** the best two framings of the leading path extended to 20 tasks each, on the other kind of
+account where it can run there; a same-day `gpt-5.5` (`Gpt_5_5_Chat`) control arm on that path; included
+vs paid on the premium account for the winner; then real pi fix-bug + multi, 5 runs each, for the winner.
