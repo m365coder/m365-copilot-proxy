@@ -129,6 +129,9 @@ const MODEL_TONES: Record<string, string> = {
   // sibling (`Gpt_61_Sol`, `Gpt_61_Sol_Chat`, `Gpt_61_Reasoning`, …) is rejected.
   "gpt-6.1-sol": "Gpt_61_Sol_Reasoning",
 
+  // Forum — under evaluation (docs §36).
+  "forum": "Forum",
+
   // GPT-5.4. Bare `gpt-5.4` has always been the reasoning tone (unlike its
   // siblings); only the `-quick` alias moved, from the retired `Gpt_5_4_Quick`.
   "gpt-5.4": "Gpt_5_4_Reasoning",
