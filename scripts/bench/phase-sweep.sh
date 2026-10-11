@@ -65,8 +65,9 @@
 # real-pi arm doesn't see that one, and analyze-arms marks its runs.
 #
 # One sweep per account at a time: two would spend the same turn budget and
-# throttle each other. For a long sweep, run it detached and wait for
-# $ARCHIVE/DONE (or FAILED):
+# throttle each other. Sweeps on several accounts on one host need a PORT each:
+# an arm whose port another proxy holds fails rather than use that proxy. For a
+# long sweep, run it detached and wait for $ARCHIVE/DONE (or FAILED):
 #   setsid -f env MODEL=… PHASES=… nix develop --command bash scripts/bench/phase-sweep.sh </dev/null >/dev/null 2>&1
 set -u
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -196,11 +197,19 @@ start_proxy() {
     $penv $PROXY_CMD "$PORT" > "$ARCHIVE/$label-proxy.out" 2>&1 &
   PROXY_PID=$!
   for _ in $(seq 1 120); do
-    curl -s -m2 "http://localhost:$PORT/health" >/dev/null && return 0
+    curl -s -m2 "http://localhost:$PORT/health" >/dev/null && owns_port && return 0
     kill -0 "$PROXY_PID" 2>/dev/null || { PROXY_PID=""; return 1; }
     sleep 1
   done
   return 1
+}
+
+# Whether $PORT is held by this arm's proxy. Another sweep's proxy on the same
+# port answers /health too; ours then dies with EADDRINUSE and the bench talks to
+# the other account's proxy (2026-10-11, hypotheses §36). Without ss, trust /health.
+owns_port() {
+  command -v ss >/dev/null 2>&1 || return 0
+  ss -ltnpH "sport = :$PORT" 2>/dev/null | grep -q "pid=$PROXY_PID,"
 }
 
 RESULT=""
