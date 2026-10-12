@@ -250,7 +250,8 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   **Read its `ChainOfThoughtSummary` frames** (`M365_DUMP_FRAMES=1`) — they say why it refused.
 - **Not every tone serves with the tool agent — `toneUsesToolAgent()` decides, per exact tone**
   (`M365_FORCE_AGENT=1`/`0` overrides it either way).
-  Claude tones (except `Claude_Opus`, see above) and `Gpt_6_Reasoning` go agent-less even with tools.
+  Claude tones (except `Claude_Opus`, see above), `Gpt_6_Reasoning` and `Forum` go agent-less even with tools.
+  `Forum` is there by choice, not a dead route: it serves both ways, and agent-less took fewer turns (§36).
   `Claude_Sonnet` and `Claude_Sonnet_5` were benched with the agent on a premium account (§30 F75): it
   removes the sandbox of Sonnet 4.6, Sonnet 5 and Sonnet 5.5, but Sonnet 5 (`Claude_Sonnet_5` @ paid)
   then refuses the harness and Sonnet 4.6 (`Claude_Sonnet` and `Claude_Sonnet_5` @ included) spends a

@@ -90,6 +90,9 @@ export const DEFAULT_CELLS = [
   // one (#23) — the proxy learns which at runtime (PREMIUM_ONLY_AGENT_TONES).
   { tone: "Gpt_6_Sol_Reasoning", note: "gpt-6-sol — agent only on a premium account" },
   { tone: "Gpt_61_Sol_Reasoning", note: "gpt-6.1-sol — agent only on a premium account", ...INCLUDED },
+  // Serves with the agent on every account, both scenarios where licensed; the
+  // proxy sends its tool requests agent-less anyway (fewer turns, §36).
+  { tone: "Forum", note: "forum — agent serves on every account, proxy goes agent-less", ...INCLUDED },
   // One tone, two models agent-less: Sonnet 4.6 included, Sonnet 5.5 paid
   // (§26). Sonnet 5 has its own tone now, paid only (included is Sonnet 4.6).
   { tone: "Claude_Sonnet", note: "claude-sonnet (Sonnet 4.6 agent-less)", ...INCLUDED },

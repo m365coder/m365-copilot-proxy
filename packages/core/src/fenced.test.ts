@@ -651,6 +651,13 @@ describe("defaultFramingForTone", () => {
     expect(defaultFramingForModel("gpt-6.1-sol")).toBe("relay_batch");
   });
 
+  it("gives Forum relay_batch (docs §36)", () => {
+    // relay and relay_batch were the only framings at 9–10/10 on all four paths
+    // with no Disengaged turn; relay_batch took ~30% fewer turns.
+    expect(defaultFramingForTone("Forum")).toBe("relay_batch");
+    expect(defaultFramingForModel("forum")).toBe("relay_batch");
+  });
+
   it("keeps the minimal variant materially shorter than baseline (not a default any more, still selectable)", () => {
     const lean = formatFencedToolDefinitions([bash, readFile], "minimal");
     const baseline = formatFencedToolDefinitions([bash, readFile], "baseline");

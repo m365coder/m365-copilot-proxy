@@ -84,6 +84,16 @@ const TONES = [
   // budget (40/day, 75/week), so there's no paid cell here.
   { tone: "Gpt_61_Sol_Reasoning", note: "gpt-6.1-sol — included scenario: expect DeepLeo on every account", ...INCLUDED },
 
+  // Forum (§36): LIVE on the included scenario on every account and on the
+  // paid one of a premium account, unmetered there. The proxy routes it on the
+  // included scenario; the paid cell is the regression detector if that changes.
+  { tone: "Forum", note: "forum — included scenario: expect DeepLeo on every account", ...INCLUDED },
+  { tone: "Forum", note: "PAID scenario: expect DeepLeo on a premium account, no metering", ...PAID },
+  // Mapped as claude-sonnet-think-deeper but last identified on Sonnet 4.5.
+  // It now self-IDs as the GPT-5 chat model / GPT-5.5 agent-less on both
+  // scenarios (§36) — self-ID is weak evidence, so this cell is a watch, not a verdict.
+  { tone: "Claude_Sonnet_Reasoning", note: "claude-sonnet-think-deeper — self-IDs as GPT (§36)", ...INCLUDED },
+
   // Claude_Fable: present in the real web client's tone list (§12.6 decompile)
   // alongside Claude_Sonnet, so it is a registered route rather than a guess.
   // It is accepted here and answers — but it self-identifies as GPT-5, not as

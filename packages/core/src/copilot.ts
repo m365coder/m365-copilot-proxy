@@ -129,7 +129,15 @@ const MODEL_TONES: Record<string, string> = {
   // sibling (`Gpt_61_Sol`, `Gpt_61_Sol_Chat`, `Gpt_61_Reasoning`, …) is rejected.
   "gpt-6.1-sol": "Gpt_61_Sol_Reasoning",
 
-  // Forum — under evaluation (docs §36).
+  // Forum. A chat tone, not a reasoning one (no ChainOfThoughtSummary frames,
+  // ~6 s turns). It serves on the included scenario on every account, with the
+  // tool agent and without, and on the paid scenario of a premium account
+  // unmetered; it routes on the included one, which every account can use.
+  // Self-ID can't place it: as with the GPT tones, it repeats M365's system
+  // prompt ("M365 Copilot (GPT-5 chat model)", sometimes "GPT-5.5"). Its tool requests
+  // go agent-less (AGENTLESS_TOOL_TONES) with relay_batch: 29/30 on the bench
+  // and 10/10 in real pi on each included path, and 22% fewer pi turns without
+  // the agent (docs §36).
   "forum": "Forum",
 
   // GPT-5.4. Bare `gpt-5.4` has always been the reasoning tone (unlike its
@@ -295,11 +303,16 @@ export function isOpus45Model(model: string): boolean {
 //   (24/30, §17) was measured agent-less.
 // - Tones in PREMIUM_ONLY_AGENT_TONES take the agent only on a premium
 //   account; on a non-premium one it's the same dead route, learned at runtime.
+// - `Forum` serves both ways on every account, so this is a choice, not a dead
+//   route: under relay_batch both paths solve alike (bench 29/30 each, real pi
+//   10/10 each), and agent-less takes fewer turns (pi 3.5 vs 4.5 per run, bench
+//   2.1 vs 2.3 per task), with no turns in M365's code interpreter (§36).
 //
 // Listed by exact tone. Check a new tone with `scripts/agent-tone-probe.mjs`
 // on BOTH kinds of account before deciding which side it belongs on.
 export const AGENTLESS_TOOL_TONES: ReadonlySet<string> = new Set([
   "Gpt_6_Reasoning",
+  "Forum",
 ]);
 
 /**

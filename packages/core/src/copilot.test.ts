@@ -252,6 +252,30 @@ describe("GPT-6.1 Sol routing (§27)", () => {
   });
 });
 
+describe("Forum routing (§36)", () => {
+  afterEach(() => {
+    delete process.env.M365_FORCE_AGENT;
+  });
+
+  it("maps forum to the Forum tone on the INCLUDED scenario — every account, unmetered", () => {
+    expect(getToneForModel("forum")).toBe("Forum");
+    expect(getAvailableModels()).toContain("forum");
+    expect(PAID_SCENARIO_TONES.has("Forum")).toBe(false);
+    expect(getScenarioForModel("forum")).toEqual(INCLUDED);
+    expect(meteredBudgetOf("forum")).toBeNull();
+  });
+
+  it("sends tool requests agent-less by default, and M365_FORCE_AGENT still overrides it", () => {
+    expect(AGENTLESS_TOOL_TONES.has("Forum")).toBe(true);
+    expect(PREMIUM_ONLY_AGENT_TONES.has("Forum")).toBe(false);
+    expect(toneUsesToolAgent("Forum")).toBe(false);
+    expect(requestUsesAgent("forum", true)).toBe(false);
+    expect(modelRequiresAgent("forum")).toBe(false);
+    process.env.M365_FORCE_AGENT = "1";
+    expect(requestUsesAgent("forum", true)).toBe(true);
+  });
+});
+
 describe("Opus routing", () => {
   afterEach(() => {
     delete process.env.M365_SCENARIO;

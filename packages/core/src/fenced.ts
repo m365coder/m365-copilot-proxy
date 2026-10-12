@@ -471,6 +471,15 @@ export function currentFramingVariant(toneDefault?: string): string {
  *  its sandbox: under relay_batch it never went in (0 of 80 bench tasks and pi
  *  runs, GPT-6 Sol 25 of 100), under honest 3 of 40 (GPT-6 Sol 17 of 20; docs §29).
  *
+ *  `Forum` (forum) defaults to `relay_batch` (docs §36). Seven framings on all
+ *  four paths (agent or not × included or paid scenario): baseline solved
+ *  0–5/10 and minimal 1–7/10, giving up with "I can't access your files" or
+ *  tripping the JailBreak Classifier, and agent-less baseline worked in M365's
+ *  code interpreter instead. Only relay and relay_batch solved 9–10/10 on every
+ *  path with no Disengaged turn, and relay_batch took about 30% fewer turns
+ *  (20–24 vs 31–32 per 10 tasks): 29/30 on each included path, then 10/10 in
+ *  real pi on each.
+ *
  *  Every other tone keeps the bench-tuned `baseline` byte-for-byte. */
 export function defaultFramingForTone(tone?: string): string | undefined {
   if (tone === "Claude_Opus") return "relay_batch";
@@ -479,6 +488,7 @@ export function defaultFramingForTone(tone?: string): string | undefined {
   if (tone === "Gpt_6_Reasoning") return "relay_batch";
   if (tone === "Gpt_6_Sol_Reasoning") return "relay_batch";
   if (tone === "Gpt_61_Sol_Reasoning") return "relay_batch";
+  if (tone === "Forum") return "relay_batch";
   return undefined;
 }
 
