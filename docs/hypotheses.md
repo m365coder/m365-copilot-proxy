@@ -5362,7 +5362,7 @@ the `Full`-only turns change for streaming clients there.
 without the tool agent, on the premium account and a non-premium one. What is it, which path and
 scenario should it run on, which framing makes it drive a coding loop, and is it usable at all?
 `Claude_Sonnet_Reasoning` (`claude-sonnet-think-deeper`, not re-identified since Sonnet 4.5) was probed
-alongside it.
+alongside it. Shipped as `forum`: agent-less, included scenario, `relay_batch` (F94).
 
 ### F90 — `Forum` serves wherever the account is licensed, and the paid scenario spends no budget 🟢
 `tone-probe` + `agent-tone-probe` (the user's, 19:14–19:27Z, and ours with `--baseline`, 19:36–19:42Z),
@@ -5372,43 +5372,49 @@ self-ID prompt:
 |---|---|---|---|
 | premium | agent | 4/4 serve (`DeepLeo` + `3PDeclarativeAgent`) | 4/4 serve |
 | premium | agent-less | 4/4 serve | 4/4 serve |
-| non-premium account 1 | agent | 4/4 serve | 1/1 `InvalidCopilotLicense` |
-| non-premium account 1 | agent-less | 4/4 serve | 1/1 `InvalidCopilotLicense` |
-| non-premium account 2 | agent | 1/1 serve | — |
-| non-premium account 2 | agent-less | 1/1 serve | — |
+| a non-premium account | agent | 4/4 serve | 1/1 `InvalidCopilotLicense` |
+| a non-premium account | agent-less | 4/4 serve | 1/1 `InvalidCopilotLicense` |
+| another non-premium account | agent | 1/1 serve | — |
+| another non-premium account | agent-less | 1/1 serve | — |
 
 The paid frames' `metering` map didn't move across the eight paid `Forum` turns (five readings, every
 `GPT61Sol*`, `ClaudeSonnet55*` and `ClaudeOpus*` allowance unchanged, with agent-less paid turns in
-between), and no new key appeared, so `Forum` @ paid isn't metered. (New since §27: `*Word` copies of the Opus, Sonnet 5.5 and GPT-6.1 Sol budgets, e.g.
-`ClaudeSonnet55DailyWord` — Word's own allowances, presumably; nothing here spends them.)
+between), and no new key appeared, so `Forum` @ paid isn't metered. (New since §27: `*Word` copies of
+the Opus, Sonnet 5.5 and GPT-6.1 Sol budgets, e.g. `ClaudeSonnet55DailyWord` — Word's own allowances,
+presumably; nothing here spends them.)
 
-### F91 — self-ID can't place it; behaviour can 🟡 (n=1 per cell)
+### F91 — neither self-ID nor a sandbox fingerprint places it 🟡
 With the agent every tone tried (`Forum`, `Gpt_5_5_Chat`, `magic`, `Claude_Reasoning`,
 `Claude_Sonnet_Reasoning`) says "M365 Copilot (GPT-5 chat model)". Agent-less `Forum`,
 `Claude_Reasoning` and `Claude_Sonnet_Reasoning` name "GPT-5.5" more often than `Gpt_5_5_Chat` does
-("GPT-5.5, created by OpenAI" on a non-premium account), but that text is M365's system prompt talking
-(H27a), so it says nothing about the model. A behavioural probe does (premium, agent-less, included,
-code interpreter on as the proxy sends it, grounding off; `fingerprint-probe`, 19:44Z):
+("I'm GPT-5.5, created by OpenAI" on a non-premium account), but that text is M365's system prompt
+talking (H27a), so it says nothing about the model.
 
-| tone | "run this Python and show the output" | clock puzzle (answer: Friday 06:51) | frames |
+A behavioural probe (`scripts/fingerprint-probe.mjs`: agent-less, included, code interpreter on as the
+proxy sends it, grounding off; "run this Python and show the output", once on the premium account at
+19:44Z and twice on a non-premium one at 22:53Z) didn't separate them either:
+
+| tone | where it ran the code | frames | clock puzzle (premium, n=1) |
 |---|---|---|---|
-| `Forum` | **refuses**: "Sorry, but I can't disclose or enumerate the underlying execution environment…"; no code runs | **Thursday 06:51** | text only, 6 s |
-| `Claude_Sonnet_Reasoning` | runs it: `/mnt/data`, user `oai` | Friday 06:51 | CodeGenerator + CodeInterpreter, like `Gpt_5_5_Chat` |
-| `Gpt_5_5_Chat` | runs it: `/mnt/data`, user `oai` | Friday 06:51 | CodeGenerator + CodeInterpreter |
-| `Gpt_5_5_Reasoning` | runs it via `bash -lc python …`: `/mnt/data` | Friday 06:51 | `ChainOfThoughtSummary` |
-| `Claude_Sonnet` (Sonnet 4.6) | runs it: **`/home/claude`** | Friday 06:51, with its working | Code Progress frames |
+| `Forum` | refused 1/3 ("Sorry, but I can't disclose or enumerate the underlying execution environment…", premium); `/mnt/data` as `oai` 2/3 | CodeGenerator + CodeInterpreter when it ran | **Thursday 06:51** (wrong) |
+| `Claude_Sonnet_Reasoning` | `/mnt/data` as `oai` 3/3 | CodeGenerator + CodeInterpreter 3/3 | Friday 06:51 |
+| `Gpt_5_5_Chat` | `/mnt/data` as `oai` 3/3 | CodeGenerator + CodeInterpreter 1/3, `bash -lc python3 …` 2/3 | Friday 06:51 |
+| `Gpt_5_5_Reasoning` | `/mnt/data` (`bash -lc python …`) 1/1 | **`ChainOfThoughtSummary`** | Friday 06:51 |
+| `Claude_Sonnet` (Sonnet 4.6) | **`/home/claude`** 1/1 premium, `/mnt/data` 2/2 non-premium ("Analysing") | Code Progress frames | Friday 06:51, with its working |
 
-`Forum` is the odd one out: it refuses where every control complies, and it got the puzzle wrong. The
-first bench arm showed the same kind of refusal (`find-needle`: "Sorry, I can't help locate, extract, or
-reveal secret values…"). One sample per cell, so this is a lead, not a classification.
+Every tone ran in the same code interpreter, the frames vary from run to run within a tone, and
+`Forum`'s refusal didn't repeat. What does set `Forum` apart from `Gpt_5_5_Reasoning` is that it is a
+chat tone: no `ChainOfThoughtSummary` frames, ~6 s turns. Against `Gpt_5_5_Chat` the bench found no
+difference under the same framing (F94), and the one `Forum`-specific behaviour seen more than once is
+H36a's.
 
 ### Framing: design and pre-registered decision rule (fixed 19:55Z, before reading any arm)
 **Phase A (screen, from 19:47Z):** `phase-sweep.sh`, `MODEL=forum` (a temporary mapping), 10 bench
 tasks per arm, confab retry off, paced (`M365_AVOID_THROTTLING=1`), seven framings — baseline, minimal,
 demo_only, honest, terse_user, relay, relay_batch — in a different order per account. Paths:
-agent @ included on non-premium account 1, agent-less @ included on non-premium account 2, and
-agent @ paid and agent-less @ paid interleaved framing by framing on the premium account (the paid
-scenario forced with `M365_SCENARIO`, the path with `M365_FORCE_AGENT`). One proxy per arm.
+agent @ included on one non-premium account, agent-less @ included on the other, and agent @ paid and
+agent-less @ paid interleaved framing by framing on the premium account (the paid scenario forced with
+`M365_SCENARIO`, the path with `M365_FORCE_AGENT`). One proxy per arm.
 
 **Rule.**
 1. *Framing*, per path: most solves; within 1 per 10 of the best, fewest Disengaged + jailbreak turns,
@@ -5422,3 +5428,94 @@ scenario forced with `M365_SCENARIO`, the path with `M365_FORCE_AGENT`). One pro
 **Phase B:** the best two framings of the leading path extended to 20 tasks each, on the other kind of
 account where it can run there; a same-day `gpt-5.5` (`Gpt_5_5_Chat`) control arm on that path; included
 vs paid on the premium account for the winner; then real pi fix-bug + multi, 5 runs each, for the winner.
+
+**What ran.** The first start (19:47Z) put both non-premium sweeps on port 4141: one proxy died with
+`EADDRINUSE`, its `/health` check was answered by the other account's proxy, and both arms were
+discarded after 3–5 tasks (`phase-sweep.sh` now checks that its own proxy holds the port). The premium
+sweep was throttled (`PerUserThrottled`, 20:29Z) five tasks into its 7th arm: the pacing model counts
+the proxy's turns only, and ~30 probe threads just before the sweep (F90, F91) never reached a debug
+log. That arm was re-run whole after the 75-minute hold; its 4 valid tasks are left out below. Both
+leading paths turned out to be included, which both kinds of account can run, so phase B extended them
+on the other non-premium account and on the premium account. The real-pi arms ran on both included
+paths, and `gpt-5.5` got real-pi control arms too (not pre-registered).
+
+### F92 — phase A: only relay and relay_batch solve 9–10/10 on every path; relay_batch with ~30% fewer turns 🟢
+10 bench tasks per cell; solved, M365 turns, Disengaged turns (every one of them the JailBreak
+Classifier's). Sandbox turns only where noted.
+
+| framing | agent @ included | agent-less @ included | agent @ paid | agent-less @ paid |
+|---|---|---|---|---|
+| baseline | 5/10, 17, 2 | 3/10, 14, 1 | 5/10, 16, 2 | **0/10**, 10, 2 (6 sandbox) |
+| minimal | 7/10, 21, 3 | 5/10, 15, 3 | 7/10, 20, 3 | **1/10**, 12, 5 (2 sandbox) |
+| demo_only | 9/10, 25, 1 | 10/10, 24, 0 | 9/10, 25, 1 | 10/10, 25, 0 |
+| honest | 9/10, 27, 0 | 8/10, 26, 0 | 9/10, 31, 0 | **3/10**, 14, 0 |
+| terse_user | 8/10, 25, 1 | 9/10, 22, 1 | 8/10, 24, 2 | 6/9, 19, 1 |
+| relay | 9/10, 31, 0 | 10/10, 32, 0 | 10/10, 31, 0 | 9/10, 31, 0 |
+| relay_batch | **9/10, 22, 0** | **10/10, 22, 0** | **10/10, 24, 0** | **10/10, 21, 0** |
+
+The failures are the GPT chat model's (§19): "I can't access or modify files in your filesystem…"
+before any tool call, the classifier's "Sorry, it looks like I can't chat about this. Let's try a
+different topic.", and, agent-less under baseline and minimal, work in M365's code interpreter
+(`/mnt/data`) where the task's files don't exist. Under relay and relay_batch: no sandbox turn and no
+Disengaged turn on any path. By rule 1 relay_batch is the framing on all four paths (demo_only ties on
+solves in places but trips the classifier; relay ties but takes 31–32 turns to relay_batch's 21–24).
+The agent-less paid cells are much worse under the weaker framings than the agent-less included ones
+(honest 3 vs 8, minimal 1 vs 5, baseline 0 vs 3), but they ran on different accounts, and under
+relay_batch the two don't differ (F93).
+
+### F93 — phase B and real pi: relay_batch holds on every path 🟢
+relay_batch, bench (A + B), and real pi fix-bug + multi, 5 runs each, 21:09–23:55Z, no throttled or
+invalid task:
+
+| path | bench | turns per task | real pi | turns per run |
+|---|---|---|---|---|
+| agent @ included (two non-premium accounts + premium) | 29/30 | 2.33 | 10/10 | 4.50 |
+| agent-less @ included (two non-premium accounts + premium) | 29/30 | 2.13 | 10/10 | **3.50** |
+| agent @ paid (premium) | 19/20 | 2.35 | — | — |
+| agent-less @ paid (premium) | 20/20 | 2.10 | — | — |
+
+All 3 bench tasks relay_batch lost, out of 100, were `find-needle`, refused as a secrets request (H36a).
+The runners-up on 20 tasks: agent, honest 18/20; agent-less, demo_only 19/20 with a Disengaged turn.
+Agent-less vs agent on the included bench: 2.10 vs 2.30 turns per task on the non-premium accounts
+(−9%, p = 0.15, task-stratified permutation); in real pi 3.50 vs 4.50 per run (−22%, p = 0.04),
+although each path's pi arms ran on a different non-premium account. No sandbox, Disengaged or
+jailbreak turn in any relay_batch bench task or pi run. On the premium account, included vs paid under
+relay_batch: with the agent 10/10 vs 19/20 (2.40 vs 2.35 turns per task, p = 1.0), without it 10/10 vs
+20/20 (2.20 vs 2.10).
+
+### F94 — decision: `forum`, agent-less, included scenario, relay_batch 🟢
+Against the rule: (1) relay_batch on every path; (2) the included paths tie on the bench (29/30 each)
+and agent-less takes fewer turns, so agent-less; (3) paid can't be ≥ 3 per 20 above included's
+29/30, so included; (4) 29/30 ≥ 16/20 on the bench and 10/10 in real pi on each path, so **usable**.
+Shipped: `forum` → `Forum` in `MODEL_TONES`, `Forum` in `AGENTLESS_TOOL_TONES` (it serves both ways;
+this is the turn count, not a dead route, and `M365_FORCE_AGENT=1` brings the agent back), not in
+`PAID_SCENARIO_TONES`, no metering, `defaultFramingForTone("Forum") = relay_batch`.
+
+**Against `gpt-5.5`, same day, same framing (not pre-registered):** no difference. Bench relay_batch on
+the same accounts: agent-less 9/10 vs 10/10 (2.00 vs 2.10 turns per task), agent 10/10 vs 10/10 (2.40
+vs 2.50); real pi 10/10 each way, agent-less 3.50 vs 4.10 per run (p = 0.63), agent 4.50 vs 4.40.
+What `forum` adds over `gpt-5.5` is not measured here. **H36b (open):** `gpt-5.5` itself still
+defaults to baseline (16/30 on Sep 28, agent); under relay_batch it went 20/20 on the bench and 20/20
+in real pi today. Worth a pre-registered baseline vs relay_batch sweep for `Gpt_5_5_Chat`.
+
+### H36a — `Forum` refuses to read out a secret where `gpt-5.5` doesn't: agent-less only 🟡 (pre-registered 23:00Z)
+Across phases A and B `find-needle` ("find the line starting `SECRET_CODE=` and tell me the code")
+was refused as a secrets request ("Sorry, I can't help retrieve or disclose secret codes,
+credentials…") 8 times in 28 `Forum` runs, under every framing, and 2 of 6 times under relay_batch;
+`gpt-5.5`'s two relay_batch control arms solved it. **Probe:** `find-needle` × 6 per model under
+relay_batch, `Forum` and `gpt-5.5` alternating (3 + 3 + 3 + 3), agent-less on one non-premium account
+and with the agent on the other. **Falsifier:** `Forum`'s refusals within 1 of `gpt-5.5`'s on each path.
+
+**Result (23:00–23:25Z):** agent-less, `Forum` refused 3/6 and `gpt-5.5` 0/6 (Fisher p = 0.18); with the
+agent, `Forum` 5/6 and `gpt-5.5` 6/6, the same wording. Falsified with the agent: there the refusal
+belongs to the agent path, not the tone. Agent-less, where `forum` ships, it holds at this n but isn't
+significant. In a coding loop it costs the odd task that reads a credential-looking value aloud.
+
+### H36c — `Claude_Sonnet_Reasoning` (`claude-sonnet-think-deeper`): unplaced 🔴
+It self-IDs like the GPT chat tones on both scenarios, agent or not ("M365 Copilot (GPT-5.5)", "I am
+ChatGPT, based on the GPT-5.5 model"), and in F91's code-interpreter probe it behaved like
+`Gpt_5_5_Chat` and `Forum` (`/mnt/data`, CodeGenerator + CodeInterpreter, 3/3), with no
+`ChainOfThoughtSummary` — but neither signal can tell a model apart (F91). Not benched. **Probe:** a bench
+or real-pi A/B against `claude-sonnet` and `gpt-5.5` under the same framing, agent-less, where Sonnet
+4.6's habits are known (YAML block lists in `edit`, the self-written `<tool_response>`, §20, #50). The
+mapping stays until that says otherwise; `tone-probe` now carries a cell for it.
