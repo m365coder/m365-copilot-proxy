@@ -215,6 +215,22 @@ export class TurnTextComposer {
 }
 
 /**
+ * Whether a bot message is the model's chain of thought: a `Progress` message
+ * with `contentOrigin: "ChainOfThoughtSummary"` (Claude Sonnet 5/5.5 and Opus;
+ * Sonnet 4.6 and the GPT-6 tones send none, hypotheses F97). It is never
+ * content — it carries a `messageType`, so the answer never includes it — and
+ * it arrives only as whole-text snapshots per messageId, never a cursor or a
+ * delta, each one
+ * extending the last (263 messages in 225 dumped turns; the final item's copy
+ * equals the last snapshot in all of them). A turn can carry several, between
+ * its answer messages. The proxy hands it to the client as
+ * `reasoning_content`, which pi shows as a thinking block.
+ */
+export function isChainOfThought(m: { contentOrigin?: string; text?: string }): m is { contentOrigin: string; text: string } {
+  return m.contentOrigin === "ChainOfThoughtSummary" && typeof m.text === "string" && m.text.length > 0;
+}
+
+/**
  * Attach a native custom action/plugin to a conversation and drive the confirm→invoke
  * round-trip over the WS (docs/hypotheses.md §12.6, H-NATIVE-6/7). All fields are
  * best-effort passthroughs modelled on the decompiled client; the exact inline-def
@@ -380,6 +396,11 @@ export class CopilotSession {
       // the composed whole folded into this string. See `advance`.
       let answer = "";
       const composer = new TurnTextComposer();
+      // The chain of thought, assembled the same way but kept apart from the
+      // answer (isChainOfThought); `onReasoning` listeners get each new suffix.
+      let reasoning = "";
+      const thoughts = new TurnTextComposer();
+      const reasoningListeners: Array<(delta: string) => void> = [];
       let receivedContent = false;
       let throttleInfo: { current: number; max: number } | null = null;
       let contentOrigin: string | null = null;
@@ -482,9 +503,29 @@ export class CopilotSession {
         if (r.emit) onDelta(r.emit);
       };
 
+      // Fold a chain-of-thought snapshot in and hand listeners the new suffix
+      // (prefix-safe, like `advance`). Not content: hasContent stays as it was.
+      const think = (m: { messageId?: string; text: string }) => {
+        thoughts.snapshot(m.messageId, m.text);
+        const r = foldStreamText(reasoning, thoughts.text);
+        reasoning = r.answer;
+        if (!r.emit) return;
+        for (const listener of reasoningListeners) {
+          try { listener(r.emit); } catch (e) { log.error("reasoning listener failed:", (e as Error).message); }
+        }
+      };
+
       const stream: CopilotStream = {
         get fullText() {
           return answer;
+        },
+        get reasoning() {
+          return reasoning;
+        },
+        onReasoning(listener: (delta: string) => void) {
+          // Whatever arrived before the caller subscribed comes first, in one piece.
+          if (reasoning) listener(reasoning);
+          reasoningListeners.push(listener);
         },
         get hasContent() {
           return receivedContent;
@@ -859,6 +900,7 @@ export class CopilotSession {
             for (const m of item.messages ?? []) {
               if (m.author !== "bot") continue;
               captureImages(m);
+              if (isChainOfThought(m)) think(m);
               if (m.contentOrigin) contentOrigin = m.contentOrigin;
               if (m.messageType) messageType = m.messageType;
               if (m.messageId) messageId = m.messageId;
@@ -902,6 +944,7 @@ export class CopilotSession {
                 // `3PDeclarativeAgent` and surface `Disengaged` cleanly.
                 if (m.author === "bot") {
                   captureImages(m);
+                  if (isChainOfThought(m)) think(m);
                   if (m.contentOrigin) contentOrigin = m.contentOrigin;
                   if (m.messageType) messageType = m.messageType;
                   if (m.messageId) messageId = m.messageId;

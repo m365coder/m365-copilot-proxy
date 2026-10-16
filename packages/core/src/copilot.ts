@@ -542,6 +542,12 @@ export interface CapturedImage {
 export interface CopilotStream {
   [Symbol.asyncIterator](): AsyncIterator<string>;
   fullText: string;
+  /** The model's chain of thought this turn (`ChainOfThoughtSummary` frames,
+   *  isChainOfThought), messages joined by a blank line. Never part of `fullText`. */
+  reasoning?: string;
+  /** Call `listener` with each new piece of `reasoning` as it arrives — at
+   *  once with whatever came before the call. The pieces join to `reasoning`. */
+  onReasoning?(listener: (delta: string) => void): void;
   /** Generated images captured this turn (empty unless image gen was requested
    *  and the server returned a GraphicArt frame). */
   images: CapturedImage[];

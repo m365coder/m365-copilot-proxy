@@ -454,14 +454,22 @@ export async function handleChatCompletion(
   let lastScores: Record<string, number> | null | undefined;
   let lastTurnCount: number | null | undefined;
   let lastMetering: Record<string, number> | null | undefined;
+  // The model's chain of thought over every attempt of this request, sent to
+  // the client as `reasoning_content` (pi shows it as a thinking block).
+  let reasoning = "";
 
   // `onDelta` (when provided) forwards each text delta to the caller AS IT ARRIVES,
   // for live incremental streaming. It's safe to forward without ever retracting:
   // runBuffered only retries on an EMPTY attempt (Disengaged, dead-agent, throttle),
   // and an empty attempt emits no deltas — so a forwarded delta always belongs to the
   // one attempt that produced content and is never re-sent by a subsequent retry.
+  // `onReasoning` forwards the chain of thought the same way, on the tool path
+  // too: it isn't parsed, and a buffered tool turn would otherwise show nothing
+  // until it ends. Every attempt's goes, retried ones included — a Disengaged
+  // attempt's says why it refused — so it isn't retracted either.
   async function runBuffered(
     onDelta?: (delta: string) => void,
+    onReasoning?: (delta: string) => void,
   ): Promise<{ fullText: string } | { error: Response }> {
     let agentRefreshed = false;
     let disengageRetried = false;
@@ -511,6 +519,14 @@ export async function handleChatCompletion(
         if (err instanceof TurnBudgetHold) return { error: turnBudgetHoldResponse(err) };
         return { error: jsonResponse(502, { error: { message: err.message, type: "upstream_error" } }) };
       }
+
+      let thoughtThisAttempt = false;
+      copilotStream.onReasoning?.((delta) => {
+        if (!thoughtThisAttempt && reasoning) delta = `\n\n${delta}`; // a retry's, after an earlier attempt's
+        thoughtThisAttempt = true;
+        reasoning += delta;
+        onReasoning?.(delta);
+      });
 
       let fullText = "";
       let tagAt = -1; // where the invented <tool_response> starts, once seen
@@ -770,8 +786,9 @@ export async function handleChatCompletion(
 
   // `onDelta` streams text to the client live (non-tool path only — see produce's
   // caller). Tool mode ignores it: the raw text is parsed for tool-call fences and
-  // can't be shown verbatim, so it stays fully buffered.
-  async function produce(onDelta?: (delta: string) => void): Promise<Produced> {
+  // can't be shown verbatim, so it stays fully buffered. `onReasoning` streams the
+  // chain of thought live in both modes.
+  async function produce(onDelta?: (delta: string) => void, onReasoning?: (delta: string) => void): Promise<Produced> {
   // When tools are present, buffer full response to detect tool calls
   if (hasTools) {
     // A <tool_response> the model wrote itself is a stop sequence: everything
@@ -785,7 +802,7 @@ export async function handleChatCompletion(
       if (cutFabricated) log.info(`Model wrote its own <tool_response> — cut ${raw.length - cut.length} fabricated chars (stop sequence)`);
       return cut;
     };
-    const result = await runBuffered();
+    const result = await runBuffered(undefined, onReasoning);
     if ("error" in result) return { kind: "error", resp: result.error };
     conv.sentMessageCount = body.messages.length;
     let fullText = stopAtFabricatedResult(result.fullText);
@@ -818,7 +835,7 @@ export async function handleChatCompletion(
       text = remoteArtifact ? REMOTE_ARTIFACT_FORCE_PROMPT
         : confab ? (everActed ? MIDTASK_FORCE_PROMPT : CONFAB_FORCE_PROMPT)
         : HALLUCINATION_FORCE_PROMPT;
-      const retry = await runBuffered();
+      const retry = await runBuffered(undefined, onReasoning);
       if ("error" in retry) return { kind: "error", resp: retry.error };
       conv.sentMessageCount = body.messages.length;
       fullText = stopAtFabricatedResult(retry.fullText);
@@ -913,7 +930,7 @@ export async function handleChatCompletion(
     return { kind: "text", text: fullText };
   } else {
     // No tools — stream deltas live (onDelta) while buffering for the retry logic.
-    const result = await runBuffered(onDelta);
+    const result = await runBuffered(onDelta, onReasoning);
     if ("error" in result) return { kind: "error", resp: result.error };
     conv.sentMessageCount = body.messages.length;
     return { kind: "text", text: result.fullText };
@@ -927,16 +944,17 @@ export async function handleChatCompletion(
   if (!body.stream) {
     const p = await produce();
     if (p.kind === "error") return p.resp;
+    const thought = reasoning ? { reasoning_content: reasoning } : {};
     if (p.kind === "tools") {
       return jsonResponse(200, {
         id: completionId, object: "chat.completion", created, model,
-        choices: [{ index: 0, message: { role: "assistant", content: null, tool_calls: p.toolCalls }, finish_reason: "tool_calls" }],
+        choices: [{ index: 0, message: { role: "assistant", content: null, ...thought, tool_calls: p.toolCalls }, finish_reason: "tool_calls" }],
         usage: usage(),
       });
     }
     return jsonResponse(200, {
       id: completionId, object: "chat.completion", created, model,
-      choices: [{ index: 0, message: { role: "assistant", content: p.text }, finish_reason: outputFinishReason(p.text) }],
+      choices: [{ index: 0, message: { role: "assistant", content: p.text, ...thought }, finish_reason: outputFinishReason(p.text) }],
       usage: usage(),
     });
   }
@@ -987,9 +1005,15 @@ export async function handleChatCompletion(
         sent += delta;
         try { send({ ...base, choices: [{ index: 0, delta: { content: delta }, finish_reason: null }] }); } catch {}
       };
+      // The chain of thought, live on both paths, as `reasoning_content` (the
+      // first field pi reads a thinking block from). Not behind the gate above,
+      // which holds back answer text that may be a priority-access refusal.
+      const liveReasoning = (delta: string) => {
+        try { send({ ...base, choices: [{ index: 0, delta: { reasoning_content: delta }, finish_reason: null }] }); } catch {}
+      };
 
       let p: Produced;
-      try { p = await produce(liveDelta); }
+      try { p = await produce(liveDelta, liveReasoning); }
       catch (err: any) { p = { kind: "error", resp: jsonResponse(502, { error: { message: err?.message ?? "stream error", type: "upstream_error" } }) }; }
       clearInterval(hb);
       try {

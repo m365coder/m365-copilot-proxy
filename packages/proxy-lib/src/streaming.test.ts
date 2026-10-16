@@ -11,7 +11,9 @@ const scripted: {
   /** Text of every run() call, in order. */
   texts: string[];
   /** Per-call overrides, consumed front-first (e.g. a Disengaged turn, then an answer). */
-  queue: Array<{ fullText: string; messageType?: string | null; result?: { value: string; errorCode?: string; message?: string }; metering?: Record<string, number> }>;
+  queue: Array<{ fullText: string; messageType?: string | null; result?: { value: string; errorCode?: string; message?: string }; metering?: Record<string, number>; thoughts?: string[] }>;
+  /** The chain-of-thought pieces of every run() without a queue entry (stream.onReasoning). */
+  thoughts: string[];
   /** The model argument of every run() call, in order. */
   models: string[];
   /** The `useAgent` argument of every run() call, in order. */
@@ -34,7 +36,7 @@ const scripted: {
   awaitTurnBudgetCalls: Array<{ maxWaitMs?: number; signal?: AbortSignal }>;
   /** The `waitForBudget` argument of every run() call, in order (one function per call). */
   budgetWaits: Array<(() => Promise<unknown>) | undefined>;
-} = { deltas: [], runs: 0, texts: [], queue: [], agentFlags: [], newConversations: 0, models: [], images: [], gate: null, signals: [], stoppedAfter: null, budgetHold: null, awaitTurnBudgetCalls: [], budgetWaits: [] };
+} = { deltas: [], thoughts: [], runs: 0, texts: [], queue: [], agentFlags: [], newConversations: 0, models: [], images: [], gate: null, signals: [], stoppedAfter: null, budgetHold: null, awaitTurnBudgetCalls: [], budgetWaits: [] };
 
 vi.mock("@m365-copilot/core", async (importActual) => {
   const actual = await importActual<typeof import("@m365-copilot/core")>();
@@ -61,6 +63,7 @@ vi.mock("@m365-copilot/core", async (importActual) => {
       const next = scripted.queue.shift();
       const deltas = next ? (next.fullText ? [next.fullText] : []) : scripted.deltas;
       const full = next ? next.fullText : (scripted.fullText ?? deltas.join(""));
+      const thoughts = next ? (next.thoughts ?? []) : scripted.thoughts;
       const yielded: string[] = [];
       const stream = {
         get fullText() { return scripted.liveFullText ? yielded.join("") : full; },
@@ -75,6 +78,9 @@ vi.mock("@m365-copilot/core", async (importActual) => {
         scores: null,
         turnCount: 1,
         turnState: "Completed",
+        reasoning: thoughts.join(""),
+        // Like the real stream's replay: whatever came before the call, at once.
+        onReasoning(listener: (delta: string) => void) { for (const t of thoughts) listener(t); },
         async *[Symbol.asyncIterator]() {
           for (const d of deltas) {
             await Promise.resolve(); // yield to the event loop between deltas
@@ -1223,5 +1229,62 @@ describe("stopping a turn that writes its own <tool_response> (early stop)", () 
     expect(scripted.signals.at(-1)?.aborted ?? false).toBe(false);
     expect(scripted.stoppedAfter).toBeNull();
     expect(JSON.parse(msg.tool_calls[0].function.arguments).command).toBe("ls");
+  });
+});
+
+describe("the model's chain of thought, as reasoning_content (pi's thinking block)", () => {
+  const tools = [{ type: "function", function: { name: "bash", parameters: { type: "object", properties: { command: { type: "string" } } } } }];
+  afterEach(() => { scripted.thoughts = []; scripted.queue = []; scripted.deltas = []; scripted.fullText = undefined; });
+
+  /** One streaming request; the content, reasoning and tool-call deltas in arrival order. */
+  async function streamKinds(body: object): Promise<Array<["content" | "reasoning" | "tool", string]>> {
+    scripted.result = null;
+    const res = await handleChatCompletion(ChatCompletionRequest.parse({ stream: true, ...body }), new SessionPool());
+    const out: Array<["content" | "reasoning" | "tool", string]> = [];
+    for (const line of (await res.text()).split("\n")) {
+      if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+      const delta = JSON.parse(line.slice(6)).choices?.[0]?.delta ?? {};
+      if (delta.reasoning_content) out.push(["reasoning", delta.reasoning_content]);
+      if (delta.content) out.push(["content", delta.content]);
+      if (delta.tool_calls) out.push(["tool", delta.tool_calls[0].function.arguments]);
+    }
+    return out;
+  }
+
+  it("streams it ahead of the answer on the non-tool path, without touching the answer", async () => {
+    scripted.thoughts = ["The user wants ", "a greeting."];
+    scripted.deltas = ["Hel", "lo!"];
+    const out = await streamKinds({ model: "claude-sonnet-5", messages: [{ role: "user", content: `hi ${Math.random()}` }] });
+    expect(out.filter(([k]) => k === "reasoning").map(([, d]) => d).join("")).toBe("The user wants a greeting.");
+    expect(out.filter(([k]) => k === "content").map(([, d]) => d).join("")).toBe("Hello!");
+    expect(out[0][0]).toBe("reasoning");
+  });
+
+  it("streams it on the tool path too, ahead of the buffered tool call", async () => {
+    scripted.queue = [{ fullText: "```bash\nls\n```", thoughts: ["I should list the files."] }];
+    const out = await streamKinds({ model: "claude-sonnet-5", tools, messages: [{ role: "user", content: `look ${Math.random()}` }] });
+    expect(out.map(([k]) => k)).toEqual(["reasoning", "tool"]);
+    expect(out[0][1]).toBe("I should list the files.");
+    expect(JSON.parse(out[1][1]).command).toBe("ls");
+  });
+
+  it("puts it on the message of a non-streamed reply, tool call or text, and leaves it off without one", async () => {
+    scripted.queue = [{ fullText: "```bash\nls\n```", thoughts: ["List first."] }, { fullText: "Done.", thoughts: ["It worked."] }, { fullText: "Done." }];
+    const ask = async () => (await respond(ChatCompletionRequest.parse({ model: "claude-sonnet-5", tools, messages: [{ role: "user", content: `go ${Math.random()}` }] }))).json();
+    const call = (await ask()).choices[0].message;
+    expect(call.reasoning_content).toBe("List first.");
+    expect(call.tool_calls).toHaveLength(1);
+    expect((await ask()).choices[0].message).toMatchObject({ content: "Done.", reasoning_content: "It worked." });
+    expect((await ask()).choices[0].message).not.toHaveProperty("reasoning_content");
+  });
+
+  it("keeps every attempt's, a blank line apart: a Disengaged attempt's says why it refused", async () => {
+    scripted.queue = [
+      { fullText: "", messageType: "Disengaged", thoughts: ["This looks like a prompt injection."] },
+      { fullText: "```bash\nls\n```", thoughts: ["I'll ", "look around."] },
+    ];
+    const out = await streamKinds({ model: "claude-sonnet-5", tools, messages: [{ role: "user", content: `retry ${Math.random()}` }] });
+    expect(out.filter(([k]) => k === "reasoning").map(([, d]) => d).join("")).toBe("This looks like a prompt injection.\n\nI'll look around.");
+    expect(out.at(-1)![0]).toBe("tool");
   });
 });

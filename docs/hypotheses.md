@@ -5640,3 +5640,57 @@ bursty. Falsifier: fresh-conversation retries failing at the same rate as same-c
 Cost to watch: each such retry starts a conversation, which is what the F13 thread-rate throttle
 counts. Bounded to one per dropped turn, but on a bad `InternalError` day it adds up; the same
 afternoon's benching (one conversation per run) did trip `PerUserThrottled`.
+
+## 39. Oct 15 2026 — the model's chain of thought as pi thinking blocks
+
+### F97 — `ChainOfThoughtSummary` frames reach pi as a thinking block, on tool turns too 🟢
+
+**Wire shape** (offline, every frame dump on the premium account: 225 turns with a chain of thought, 263
+messages). It is a `Progress` message with `contentOrigin: "ChainOfThoughtSummary"`, sent only as whole-text
+snapshots per `messageId`. It never gets a cursor or a delta (so #29's cursor routing can't fold it into
+the answer), and each snapshot extends the last. The final `type:2` item's copy equaled the last
+snapshot in all 260 messages it carried. A turn can have several, between its answer messages (Sonnet 5:
+thought, text, sandbox call, thought, text).
+
+**Who sends it.** Opus 4.5 and Opus 4.8 with the agent (57 of 65 Oct 13 turns), Sonnet 5 (34 of 52, Sep 28),
+Sonnet 5.5 (129 of 136, every one carrying the `ClaudeSonnet55*` metering key). Sonnet 4.6 (0 of 86) and the
+GPT-6, GPT-6 Sol and GPT-6.1 Sol (0 of 44) send none; no GPT-5.x dump to check. Nothing in the request asks for it: our `allowedMessageTypes` matches the
+web client's, and `Progress` was already on it.
+
+**Change.** `session.ts` collects it apart from the answer (`isChainOfThought`, `stream.reasoning`,
+`stream.onReasoning`). The handler streams it as `delta.reasoning_content` on both paths, so a buffered
+tool turn shows the thought while it waits, and puts it on `message.reasoning_content` when not streaming.
+Every attempt's thought is kept (a Disengaged attempt's says why it refused). pi sends it back on later
+assistant messages, but the request schema strips it, so M365 never sees it again.
+
+**Live** (premium account, real pi 1.2.0, `hideThinkingBlock: false`): `claude-sonnet-5` fixed a one-line
+bug in 4 turns, 1 with a thought, and pi drew it italic in the thinking colour, above its `cat` call.
+`claude-opus-4.5` (Opus 4.8) took 3 turns, 2 with thoughts, one of them sent as two growing snapshots; both
+were shown whole. Follow-up turns stayed in one M365 conversation, in delta mode.
+
+**opencode** (v2.0.30, premium account, `--standalone` with its own config and data directories). Its OpenAI
+Chat parser reads `delta.reasoning_content` with no `compatibility.reasoningField` set, and records the field
+on the part (`metadata.reasoningField: "reasoning_content"`). `opencode run --format json`:
+`claude-sonnet-5` with no `reasoningField` set, 6 turns, 5 with a `reasoning` part; `claude-opus-4.5` (Opus 4.8) with
+`reasoningField: "reasoning_content"`, 3 of 3 turns. That setting makes opencode send the thought back on
+every assistant message (`requireReasoning`). The schema strips it, and the follow-up turns stayed in delta
+mode. In the TUI (`session.thinking: "show"`), each thought is a "Thought: 3.7s" block, and the current one
+streams as "Thinking" while the tool call is still buffered (6 turns, every one with a thought).
+
+Two older problems this run turned up, neither caused by this change:
+- **opencode's title request shares the task's M365 conversation.** opencode sends "You are a title
+  generator…" together with the task, with the same first user message, so `SessionPool` gives both one
+  conversation: the title prompt became turn 0 and the task turn 1, 27 ms apart. This is a concurrent pair of
+  turns in one thread, the thing operating principle 1 forbids.
+- **A multi-line string value in a fence loses everything after its first line.** For opencode's `edit`
+  (`oldString`/`newString`), Sonnet 5 wrote `oldString: def add(a, b):` and indented the next line. The
+  call came out as `{"path", "oldString": "def add(a, b):"}`, with no `newString` ("Missing key"), in 2 of 2
+  sessions, 2 or 3 wasted turns each. Its retry with `\n` escapes kept them literally, so the text didn't
+  match the file. The model recovered by editing a single line. pi's `edit` takes an `edits` array, which
+  `parseYamlBlockValue` already handles (#50), so pi never hit this.
+
+**Open.** The proxy still drops the prose a model writes next to its tool call ("Mixed output", 2 of the
+7 turns here). That prose is often the clearer reason for the call and could go out as reasoning too.
+Untested: whether the GPT reasoning tones have a reasoning stream we don't ask for. Probe: capture a
+GPT-5.5 Think Deeper turn in the web client (`m365-gui-capture.mjs`). Falsifier: no reasoning-bearing frame
+in it, which would mean the GPT tones have no thinking to forward.

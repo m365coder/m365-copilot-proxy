@@ -209,6 +209,16 @@ To let the model see images — a screenshot, a chart the agent drew, a PNG it `
 `"input": ["text", "image"]` to each model entry. pi then sends them as `image_url` parts and the proxy
 uploads them to M365 the way the web client does.
 
+**Thinking blocks.** When the model sends its chain of thought (Claude Sonnet 5 and 5.5, and Opus do; Sonnet
+4.6 and the GPT-6 tones don't), the proxy streams it as `reasoning_content`, ahead of the answer or the tool
+call, and pi shows it as a thinking block unless `"hideThinkingBlock": true` is set in
+`~/.pi/agent/settings.json` (Ctrl+T toggles it). opencode (tested with v2.0.30) shows it as "Thought"
+blocks with no extra configuration; setting `"compatibility": { "reasoningField": "reasoning_content" }` on a
+model works too. `reasoning_content` is not part of OpenAI's Chat Completions API. It is the field DeepSeek
+introduced, which other servers and clients copied, and clients that don't know it ignore it. The thinking
+is M365's running summary of the model's reasoning, and not every turn has one. When a client sends it
+back in later requests, the proxy doesn't pass it on to M365.
+
 Then run pi (use `gpt-5.5-think-deeper` — the reliable tool-calling model — and keep the
 toolset lean; M365 "disengages" on very large tool payloads, see
 [docs/m365-copilot-api.md](docs/m365-copilot-api.md#the-disengaged-filter)):
