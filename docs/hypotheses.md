@@ -5654,7 +5654,10 @@ thought, text, sandbox call, thought, text).
 
 **Who sends it.** Opus 4.5 and Opus 4.8 with the agent (57 of 65 Oct 13 turns), Sonnet 5 (34 of 52, Sep 28),
 Sonnet 5.5 (129 of 136, every one carrying the `ClaudeSonnet55*` metering key). Sonnet 4.6 (0 of 86) and the
-GPT-6, GPT-6 Sol and GPT-6.1 Sol (0 of 44) send none; no GPT-5.x dump to check. Nothing in the request asks for it: our `allowedMessageTypes` matches the
+GPT-6, GPT-6 Sol and GPT-6.1 Sol (0 of 44) send none; no GPT-5.x dump to check. GPT-6.1 Sol checked live on the
+premium account (Oct 16, one turn each): tool-less, with the agent, and agent-less with tools
+(`M365_FORCE_AGENT=0`). Each turn had only `EarlyProgress`, the `DeepLeo` answer and
+`ReferencesListComplete`: no reasoning-bearing frame of any shape, so there is nothing to forward. Nothing in the request asks for it: our `allowedMessageTypes` matches the
 web client's, and `Progress` was already on it.
 
 **Change.** `session.ts` collects it apart from the answer (`isChainOfThought`, `stream.reasoning`,
