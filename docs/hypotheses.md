@@ -5680,17 +5680,18 @@ every assistant message (`requireReasoning`). The schema strips it, and the foll
 mode. In the TUI (`session.thinking: "show"`), each thought is a "Thought: 3.7s" block, and the current one
 streams as "Thinking" while the tool call is still buffered (6 turns, every one with a thought).
 
-Two older problems this run turned up, neither caused by this change:
-- **opencode's title request shares the task's M365 conversation.** opencode sends "You are a title
-  generator…" together with the task, with the same first user message, so `SessionPool` gives both one
-  conversation: the title prompt became turn 0 and the task turn 1, 27 ms apart. This is a concurrent pair of
-  turns in one thread, the thing operating principle 1 forbids.
-- **A multi-line string value in a fence loses everything after its first line.** For opencode's `edit`
-  (`oldString`/`newString`), Sonnet 5 wrote `oldString: def add(a, b):` and indented the next line. The
-  call came out as `{"path", "oldString": "def add(a, b):"}`, with no `newString` ("Missing key"), in 2 of 2
-  sessions, 2 or 3 wasted turns each. Its retry with `\n` escapes kept them literally, so the text didn't
-  match the file. The model recovered by editing a single line. pi's `edit` takes an `edits` array, which
-  `parseYamlBlockValue` already handles (#50), so pi never hit this.
+Two older problems this run turned up, neither caused by this change. Both are fixed now:
+- **opencode's title request shared the task's M365 conversation** (#83, fixed by #85). opencode sends
+  "You are a title generator…" together with the task, with the same first user message, and `SessionPool`
+  keyed a conversation on that alone. In 2 of 3 sessions the title prompt became turn 0 and the task turn
+  1, 27 ms apart: two concurrent turns in one thread, which operating principle 1 forbids. The key now
+  includes the request's tool names (§31, after F84).
+- **A multi-line string in a header-only fence lost everything after its first line** (#82, fixed by
+  #84). For opencode's `edit` (`oldString`/`newString`), Sonnet 5 wrote `oldString: def add(a, b):` with
+  the next line indented, and the call came out as `{"path", "oldString": "def add(a, b):"}` with no
+  `newString` ("Missing key"): 2 of 2 sessions, 2 or 3 wasted turns each. In such a tool a string value
+  now runs on to the next `key:` line (the side finding after #50's). pi's `edit` takes an `edits` array,
+  which `parseYamlBlockValue` already read (#50), so pi never hit this.
 
 **Open.** The proxy still drops the prose a model writes next to its tool call ("Mixed output", 2 of the
 7 turns here). That prose is often the clearer reason for the call and could go out as reasoning too.
