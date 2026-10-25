@@ -527,10 +527,23 @@ describe("Disengage retry keeps a model's <system>-free framing", () => {
   });
 
 
-  it("still retries the <system>-tagged defaults with softened (F22)", async () => {
+  it("still retries a <system>-tagged framing with softened (F22)", async () => {
+    // No mapped model defaults to one since docs §40, so ask for baseline outright.
+    process.env.M365_FRAMING_VARIANT = "baseline";
+    try {
+      const retry = await disengageThenAnswer("gpt-5.5-think-deeper");
+      expect(scripted.texts[0]).toContain("<system>");
+      expect(retry).toContain("<system>");
+      expect(retry).toContain("You are an automated coding agent working in a real working directory");
+    } finally {
+      delete process.env.M365_FRAMING_VARIANT;
+    }
+  });
+
+  it("sends the GPT-5.x tones relay_batch since the classifier change, and keeps it on the retry (§40)", async () => {
     const retry = await disengageThenAnswer("gpt-5.5-think-deeper");
-    expect(retry).toContain("<system>");
-    expect(retry).toContain("You are an automated coding agent working in a real working directory");
+    expect(scripted.texts[0]).not.toContain("<system>");
+    expect(retry).toContain("put as much as you can into one block");
   });
 });
 

@@ -98,6 +98,18 @@ than "we eyeballed one run." See §M (Methods) for the experimental rig.
   turn (F93); with it set on the proxy alone, 144 pi turns in 40 min, 42 at the floor, no throttle (F94);
   the bucket doesn't refill at 00:00Z like the priority-access budgets: without it, the account
   throttled 31 turns after 00:00Z (F95)
+- §40 — every GPT tone now names GPT-5.6 on the premium account and GPT-5.5 / GPT-5 on non-premium ones:
+  persona or model (H40a/b), and whether each mapped tone's shipped framing still wins (H40c): the
+  `<system>`-tagged framings now trip the classifier on the GPT agent path, so `relay_batch` wins every GPT-5.x
+  tone and `magic` (F98); the tones are still distinct models (F99); GPT-6 Sol changed on the included
+  scenario, on both routes, but not on the paid one (F100); and `gpt-6-sol`'s routes flipped on non-premium
+  accounts (F101)
+- §41 — a premium account routes every tone on the paid scenario (learned from the licence refusal); the
+  §40 framings hold there too (F102); `relay_echo`, which pastes tool results back in the user's voice, gets
+  GPT-5.6 Chat through real pi (F103); the think-deeper gates, GPT-6.1 Sol's paid budget, and the shipped
+  code end to end (F104)
+- §42 — Sonnet 5.5 as `claude-sonnet`'s default on a premium account: `relay_batch`, 28% fewer real-pi turns at
+  10/10 (F105, H26b); Sonnet 5 stays on `relay` (F106)
 
 ---
 
@@ -5698,3 +5710,213 @@ Two older problems this run turned up, neither caused by this change. Both are f
 Untested: whether the GPT reasoning tones have a reasoning stream we don't ask for. Probe: capture a
 GPT-5.5 Think Deeper turn in the web client (`m365-gui-capture.mjs`). Falsifier: no reasoning-bearing frame
 in it, which would mean the GPT tones have no thinking to forward.
+
+---
+
+## 40. Oct 23 2026 — every GPT tone now names GPT-5.6 (premium) or GPT-5.5 / GPT-5 (non-premium): persona or model?
+
+**Observation** (the user's `tone-probe.mjs` + `agent-tone-probe.mjs` runs, Oct 22 23:29Z – Oct 23 00:21Z,
+premium and non-premium, n=1 per cell per account, prompt: "Reply with only your model name and version; the company; your
+knowledge cutoff").
+- **Premium account:** every tone except `Claude_Opus`, `Claude_Sonnet` and `Claude_Sonnet_5` names
+  "GPT-5.6", on both scenarios, agent-less and with the agent. That includes `Gpt_6_Reasoning`,
+  `Gpt_6_Sol_Reasoning` and `Gpt_61_Sol_Reasoning`, which named "GPT-6 reasoning model" through October
+  (F49, §27), and `Claude_Sonnet_Reasoning` (`claude-sonnet-think-deeper`), which named Claude Sonnet 4.5
+  in July (§12).
+- **Non-premium accounts:** the GPT-5.x tones keep the "M365 Copilot (GPT-5 chat/reasoning model)"
+  persona. `Claude_Chat`, `Claude_Reasoning`, `Claude_Sonnet_Reasoning` and `Gpt_6_Reasoning` @ included
+  say "GPT-5.5; OpenAI; 2024-06". `Gpt_61_Sol_Reasoning` agent-less still says "GPT-6 reasoning model".
+- The knowledge cutoffs still differ by tone (2024-06, 2025-09 for `Gpt_5_{3,4}_Reasoning`, 2025-12 for
+  `Gpt_5_6_*` and GPT-6.1 Sol), so the answers aren't all one prompt.
+- **Two route changes, the same on every non-premium account probed:** `Gpt_6_Sol_Reasoning` agent-less is now the
+  BotConnection apology, and with the agent it is `DeepLeo` and names the GPT-5 chat model. That is F49
+  the other way round. `Gpt_6_Reasoning` @ included now answers (`DeepLeo`, "GPT 5.5") where it was the
+  BotConnection apology (F31).
+- One earlier bench arm already points somewhere: `gpt-6-sol` on the premium account with the tool agent,
+  `relay_batch`, Oct 23 09:29Z — 9/10, and the miss is a `find-needle` refusal ("I can't help retrieve or
+  disclose secret codes"), §19's GPT-5.5 Chat refusal. Before that, on the premium account with the tool
+  agent, `find-needle` had been solved in every bench arm of both Sol tones: 7 GPT-6 Sol arms (Oct 5–7;
+  4 `relay_batch`, 3 `relay`) and 9 GPT-6.1 Sol arms (Oct 6; seven framings).
+
+**Scenario.** Every `gpt-6-sol` and `gpt-6.1-sol` arm in this section, the historical ones included, ran on
+`OfficeWebIncludedCopilot`, the only scenario the proxy routes those model IDs to (checked in each arm's
+debug log); none used `OfficeWebPaidCopilot`. "With the agent" / "agent-less" below means the tool agent
+on or off on that scenario. `gpt-6-think-deeper` is the one model here on `OfficeWebPaidCopilot`.
+
+Self-ID isn't identity, so the bench decides.
+
+**H40a — persona only.** Each tone's model is the one it was; only the system prompt now names GPT-5.6 /
+GPT-5.5. Its predictions, each what the same tone, path and framing did before (the outcomes are under
+H40d and in the results):
+- `gpt-6-think-deeper` (`OfficeWebPaidCopilot`, agent-less): `baseline` ≤ 3/10 with sandbox turns (F47: 0/30), `relay_batch`
+  ≥ 9/10 at ~2.1 turns per task (F61).
+- `gpt-6-sol` on the premium account with the tool agent: `relay_batch` ≥ 9/10 with `find-needle` solved,
+  as in all 4 of its Oct 5–7 `relay_batch` arms there (40/40, F71). Agent-less on the same account
+  (`M365_FORCE_AGENT=0`), `baseline` goes to its sandbox on most first turns, ≤ 6/10 (F51).
+- `gpt-6.1-sol`, non-premium, agent-less: `baseline` ≤ 2/10 with sandbox turns (0/20, F69), `relay_batch`
+  ≥ 9/10 with no sandbox turns (F72).
+- `gpt-5.6` (Chat) below `gpt-5.5` (Chat) at `baseline` (7/30 vs 16/30, §19), its misses giving up before
+  any tool call.
+
+**H40b — the model changed.** The GPT-6 tones stop working in a sandbox under `baseline` and solve there,
+`find-needle` refusals show up where there were none, and the gaps between tones close.
+
+**H40c — framing.** For every mapped tone, on the path the proxy routes it, the shipped default is still the
+best of three framings that differ as much as any we have: `baseline` (`<system>`-tagged, rule-heavy; the
+GPT-5.x and `magic` default), `minimal` (`<system>`-tagged, lean) and `relay_batch` (user voice, batched;
+the GPT-6 family's default).
+
+**Design.** `phase-sweep.sh`, all 10 bench tasks per arm, confab retry off, `M365_AVOID_THROTTLING=1`, a
+proxy per arm, the three framings in a rotated order per model. 15 model IDs: every mapped tone except the
+three Claude ones above.
+- Premium account: `gpt-6-think-deeper`, `gpt-6-sol` (agent), `gpt-6.1-sol` (agent) × 3 framings; plus
+  `gpt-6-sol` agent-less `baseline` and `gpt-5.5` / `gpt-5.6` `baseline` (H40a's fingerprints on the
+  account whose persona changed most).
+- Non-premium, each model on one account only: `m365-copilot`, `gpt-5.2`, `gpt-5.2-think-deeper`,
+  `gpt-5.3`, `gpt-5.3-think-deeper`, `gpt-5.4-quick`, `gpt-5.4`, `gpt-5.5`, `gpt-5.5-think-deeper`,
+  `gpt-5.6`, `gpt-5.6-think-deeper`, `claude-sonnet-think-deeper`, `gpt-6-sol` (now on the agent) and
+  `gpt-6.1-sol` (agent-less) × 3 framings.
+
+**Rule (fixed before any arm ran).** The screen is 10 tasks per arm. A challenger goes to stage 2 (both it
+and the default brought to ≥ 20 valid tasks, order reversed) if it is ahead of the default by ≥ 2 solves,
+or within 1 solve with ≥ 15% fewer turns per task. A default changes only if, at ≥ 20 tasks per arm, the
+challenger either (1) solves more, Fisher p < 0.05; or (2) solves within 1 per 20 and cuts turns per task
+≥ 15% (task-stratified permutation p < 0.05), with Disengaged + jailbreak + sandbox turns up by no more
+than 1 per 20 tasks. Then real pi under it (fix-bug + multi, ≥ 9/10) before it ships.
+
+**Addendum, 03:35Z Oct 24 (after the screen, before stage 2b).** `gpt-5.5-think-deeper` and
+`gpt-5.6-think-deeper` missed stage 2 by the rule (relay_batch 10/10 vs baseline 9/10, turns level). They
+get it anyway, as stage 2b, under the same switch rule: `think-deeper` resolves to one of them, and the
+screen's classifier rate drifted (the first arms of each sweep had 4–6 jailbreak turns, later `baseline`
+arms 1–3), so one 10-task arm per framing is weak evidence for a tie. Every model ID that passes the switch
+rule then gets real pi under `relay_batch` (fix-bug + multi, 5 runs each, ≥ 9/10).
+
+**H40d (pre-registered 04:05Z Oct 24) — GPT-6 Sol's agent route no longer serves GPT-6 Sol; its agent-less
+route still does.** Evidence so far: under `relay_batch` (no classifier hits) `find-needle` splits the
+tones — `m365-copilot`, `gpt-5.3`, `gpt-5.4-quick` and `gpt-5.5` refuse it ("can't disclose secret codes",
+7 of 7 arms), every reasoning tone, `gpt-5.2`, `gpt-5.6`, `gpt-6-think-deeper` and `gpt-6.1-sol` solve it —
+and `gpt-6-sol` with the tool agent now refuses it: 0 of 3 `relay_batch` arms on Oct 23–24 (two on the
+premium account, one on a non-premium account). On the premium account with the tool agent it had solved
+it in all 7 of its Oct 5–7 arms (4 `relay_batch`, 3 `relay`): 0/3 vs 7/7, Fisher p ≈ 0.008. That outcome
+contradicts H40a's `gpt-6-sol` prediction above; the 9/10 in it holds. Agent-less on the premium account
+it still works in its sandbox under `baseline` (7 sandbox turns, 1/10), GPT-6 Sol's F51 signature, which
+H40a predicted. Seconds per M365 message don't separate the routes (9–21 s for every tone, then and now).
+All of it on `OfficeWebIncludedCopilot` (see **Scenario** above). **Test:** the premium account,
+`OfficeWebIncludedCopilot`, `M365_FORCE_AGENT=0`, `relay_batch`, 2 × 10 tasks. **Predicts** `find-needle` solved in both arms, ≥ 19/20,
+and sandbox looks on some tasks (GPT-6 Sol's ~25%, F72). **Falsified by** `find-needle` refusals agent-less
+too. If it holds, `gpt-6-sol` tool requests should go agent-less on a premium account (bench + real pi
+first), and on a non-premium account, where agent-less is dead, the agent route is GPT-6 Sol in name only.
+
+**Addendum, 05:45Z Oct 24 — `gpt-5.6`'s real-pi gate failed (8/10).** fix-bug 5/5, multi 3/5; both misses
+are `Gpt_5_6_Chat`'s give-up (§19): "I'm sorry, but I can't complete the requested repository fix" and
+"I can't generate a file. The bug is…" (confab retry off, as in every sweep). Every other gate passed
+10/10. The gate never ran `baseline`, so a fail says nothing about which framing is better in pi.
+**Follow-up, fixed before it runs:** on one non-premium account, real pi fix-bug + multi under
+`relay_batch` and under `baseline`, 5 + 5 runs each, the framings interleaved phase by phase. `gpt-5.6`
+moves to `relay_batch` if its pooled pi score is ≥ 17/20 (the gate's rate, less one run) **and** ≥ the
+`baseline` arm's; otherwise it stays on `baseline`.
+
+**H40e — does `gpt-6-sol` with the tool agent serve a different model on `OfficeWebPaidCopilot` than on
+`OfficeWebIncludedCopilot`?** Untested. `Claude_Sonnet` (Sonnet 4.6 / Sonnet 5.5) and `Claude_Opus` (Opus
+4.8 / Opus 5.5) each serve a different model on the paid scenario than on the included one (§26, §36), and
+`Gpt_61_Sol_Reasoning` serves on both (F67). If the included agent route no longer serves GPT-6 Sol (H40d:
+with the agent it now refuses `find-needle`, as `m365-copilot`, `gpt-5.3`, `gpt-5.4-quick` and `gpt-5.5`
+do), the paid one might. **Test:** the premium account, `MODEL=gpt-6-sol`, phase env
+`M365_SCENARIO=OfficeWebPaidCopilot M365_LICENSE_TYPE=Premium`, the tool agent on (the shipped tool path),
+`relay_batch`, 2 × 10 tasks, after H40d's arms. **Supported by** `find-needle` solved in both arms and
+≥ 19/20. **Falsified by** a `find-needle` refusal in either arm (the included agent route's 0/3). Watch
+the frames' `throttling.metering` for a new `*Query*` key: GPT-6.1 Sol's paid scenario spends a
+priority-access budget (F67), and GPT-6 Sol's may too.
+
+### Results (Oct 23 23:37Z – Oct 24 06:59Z)
+
+106 arms: 82 bench arms (820 tasks) and 24 real-pi arms (120 runs), all with `M365_AVOID_THROTTLING=1`. No
+throttle, no network failure, no invalid task. Confab retry off, as in every sweep; the Disengage →
+`softened` retry on, so the `baseline` arms' classifier refusals had already been retried once.
+
+### F98 — on the GPT agent path the `<system>`-tagged framings now trip the JailBreak classifier; `relay_batch` wins every GPT-5.x tone, `magic` and `Claude_Sonnet_Reasoning` 🟢
+
+Bench tasks solved, pooled over the screen and stage 2 (and 2b), with Fisher's two-sided p for
+`relay_batch` vs `baseline`, then real pi under `relay_batch` (fix-bug + multi):
+
+| model ID (path) | baseline | minimal | relay_batch | p | real pi |
+|---|---|---|---|---|---|
+| `m365-copilot` (agent) | 8/20 | 3/10 | 18/20 | 0.002 | 10/10 |
+| `gpt-5.2` (agent) | 11/20 | 4/10 | 20/20 | 0.001 | 10/10 |
+| `gpt-5.2-think-deeper` (agent) | 15/20 | 7/10 | 20/20 | 0.047 | 10/10 |
+| `gpt-5.3` (agent) | 9/20 | 4/10 | 18/20 | 0.006 | 10/10 |
+| `gpt-5.3-think-deeper` (agent) | 16/20 | 4/10 | 20/20 | 0.11 | — |
+| `gpt-5.4-quick` (agent) | 11/20 | 7/10 | 18/20 | 0.031 | 10/10 |
+| `gpt-5.4` (agent) | 15/20 | 6/10 | 20/20 | 0.047 | 10/10 |
+| `gpt-5.5` (agent) | 17/30 | 4/10 | 18/20 | 0.014 | 10/10 |
+| `gpt-5.5-think-deeper` (agent) | 17/20 | 4/10 | 20/20 | 0.23 | — |
+| `gpt-5.6` (agent) | 9/30 | 2/10 | 20/20 | < 0.001 | 16/20 (`baseline` 0/10) |
+| `gpt-5.6-think-deeper` (agent) | 13/20 | 6/10 | 20/20 | 0.008 | 10/10 |
+| `claude-sonnet-think-deeper` (agent-less) | 4/20 | 2/10 | 19/20 | < 0.001 | 10/10 |
+| `gpt-6-think-deeper` (paid, agent-less) | 1/10 | 0/10 | 10/10 | — | — |
+| `gpt-6-sol` (agent) | 9/20 | 6/20 | 18/20 | — | — |
+| `gpt-6-sol`, premium (paid scenario, agent) | — | — | 19/20 | — | — |
+| `gpt-6.1-sol`, premium (agent) | 8/10 | 7/10 | 10/10 | — | — |
+| `gpt-6.1-sol`, non-premium (agent-less) | 0/10 | 1/10 | 10/10 | — | — |
+
+- **The classifier.** Across every `relay_batch` bench arm: 0 jailbreak turns and 0 sandbox turns. The
+  `<system>`-tagged arms on the GPT agent path: 1–6 jailbreak turns per 10 tasks, and most of their misses
+  are the classifier's canned "Hmm…it looks like I can't chat about this" on turn 1. On Sep 28, the same
+  `baseline` scored 16/30 (`gpt-5.5`) and 26/30 (`gpt-5.5-think-deeper`) with one Disengaged turn in 120
+  tasks (§19). The rate drifted overnight: each sweep's first `<system>`-tagged arms had 4–6 jailbreak
+  turns, later ones 1–3, and stage 2's reversed order didn't remove the gap.
+- **Turns.** `relay_batch` takes 2.1–2.4 turns per bench task against `baseline`'s 1.4–2.2, because it
+  solves more (a classifier refusal ends a task in one turn), so criterion 2 never applied.
+- **The rule's verdicts** (fixed before the arms): switch `magic`, `Gpt_5_2_*`, `Gpt_5_3_Chat`,
+  `Gpt_5_4_*`, `Gpt_5_5_Chat`, `Gpt_5_6_Reasoning` and `Claude_Sonnet_Reasoning` to `relay_batch`; keep
+  `Gpt_5_3_Reasoning` and `Gpt_5_5_Reasoning` (which `think-deeper` resolves to) on `baseline`, where
+  `relay_batch` was never worse but the difference isn't significant; keep `relay_batch` for the GPT-6 tones.
+  `gpt-5.6` failed its pi gate, and its follow-up rule keeps it on `baseline` (16/20 < 17/20), although
+  `baseline` solved 0/10 there (every run: "no shell/file tools are enabled here"; p < 0.001). That rule
+  set an absolute bar instead of comparing with `baseline`; which way `gpt-5.6` goes is open.
+- **Account kinds differ.** `gpt-5.5` under `baseline`: 15/20 on the premium account, 2/10 on a
+  non-premium one (5 jailbreak turns, the first arm of its sweep).
+
+### F99 — the tones are still distinct models: GPT-6 and GPT-6.1 Sol behave as before, and the GPT-5.x tones don't behave alike 🟢 (H40a, except GPT-6 Sol)
+
+- `gpt-6-think-deeper`: `baseline` 1/10 and `minimal` 0/10, 5 sandbox turns each, against F47's 0/30;
+  `relay_batch` 10/10 at 2.20 turns per task against F61's 2.10.
+- `gpt-6.1-sol`: agent-less (non-premium) `baseline` 0/10 with 6 sandbox turns and `minimal` 1/10 with 5,
+  against F69's 0/20 and 2/20; `relay_batch` 10/10 and never in its sandbox, as in F72. With the agent
+  (premium) every framing solves and only the `<system>`-tagged ones trip the classifier, as in F69.
+- `find-needle` under `relay_batch` splits the GPT-5.x chat tones: `m365-copilot`, `gpt-5.3`,
+  `gpt-5.4-quick` and `gpt-5.5` refuse it ("can't disclose secret codes", 7 of 7 arms), `gpt-5.2` and
+  `gpt-5.6` solve it (4 of 4), as does every reasoning tone. On the premium account, where every one of them
+  names GPT-5.6, `gpt-5.5` beats `gpt-5.6` under `baseline` 15/20 to 6/20 (p = 0.010), §19's gap.
+- Not settled: whether a GPT-5.x tone's model is the one it was before. There's no older `relay_batch` or
+  `find-needle` record of them to compare with.
+
+### F100 — GPT-6 Sol on the included scenario changed on both of its routes; on the paid scenario it solves `find-needle` 🟡 (H40d ⚫, H40e)
+
+- **Included scenario, both routes:** `find-needle` refused in all 5 of today's `relay_batch` arms (with
+  the agent: 2 on the premium account, 1 on a non-premium one; agent-less on the premium account: 2),
+  against 7 of 7 solved on Oct 5–7 (premium account, with the agent; p = 0.0013). The agent-less refusals
+  falsify H40d: it isn't the agent route that changed.
+- **Agent-less, its sandbox:** still there under `baseline` (7 sandbox turns in 10 tasks), but under
+  `relay_batch` it never went in (0 of 20 tasks), where GPT-6 Sol looked in on 25 of 100 (F72; p = 0.013)
+  and GPT-6.1 Sol on none. Today's agent-less GPT-6 Sol keeps out of its sandbox like GPT-6.1 Sol, and
+  refuses `find-needle` unlike it.
+- **Paid scenario, with the agent** (`M365_SCENARIO=OfficeWebPaidCopilot`, premium account): 19/20, and
+  `find-needle` solved in both arms (2 of 2, against today's included 0 of 5: p = 0.048), which is H40e's
+  "supported by". The one miss was fizzbuzz ("I can't generate a file. Copy-paste the requested
+  Python…"). Every paid turn carries
+  the whole `metering` map, `GPT61Sol*` keys included, but nothing moved in 30 turns (`GPT61SolQueryDaily`
+  40, `GPT61SolQueryWeekly` 67 throughout): no budget of its own, unlike GPT-6.1 Sol's (F67).
+- No CoT frames on any route, as in F97.
+- Which model serves each route is not known. What is: between Oct 7 and Oct 23 the included scenario's
+  `Gpt_6_Sol_Reasoning` started refusing `find-needle` and stopped looking into its sandbox under
+  `relay_batch`, and the paid scenario's doesn't refuse.
+
+### F101 — on a non-premium account `gpt-6-sol` is the reverse of F49 now, and its tool-less requests fail 🟢 (open)
+
+Agent-less is the dead route (BotConnection, `InternalError`) and the agent route answers, on every
+non-premium account probed. Tool requests take the agent first, so they work (`relay_batch` 9/10 on the
+bench, every turn on the agent path, no fallback). A tool-less request goes agent-less: `proxy-verify
+--model=gpt-6-sol` returned 502 after 10.4 s, three dead turns (the request, the fresh-conversation retry,
+"Please continue."), and the handler counted it as an empty response, the throttle-backoff signal. Not
+fixed yet.

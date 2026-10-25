@@ -311,45 +311,35 @@ without NixOS: `nix run github:cramt/m365-copilot-proxy -- 4141`.
 | `gpt-6-think-deeper` | Gpt_6_Reasoning | GPT-6 reasoning. **Needs a paid/premium Copilot seat** (see below); 30/30 on the bench (agent-less, `relay` framing). Defaults to `relay_batch`: 20/20 at 2.1 turns per task (relay: 3.2), 10/10 driving real pi |
 | `gpt-6-sol` | Gpt_6_Sol_Reasoning | GPT-6 Sol ("GPT 6.0 Sol" in the web UI). **Works on every account**, no paid seat needed; uses the tool agent only on a premium account (see below). Defaults to `relay_batch`: 40/40 on the bench with the agent, 60/60 without, 30/30 driving real pi, at 2.1 turns per bench task either way |
 | `gpt-6.1-sol` | Gpt_61_Sol_Reasoning | GPT-6.1 Sol ("GPT-6.1 Sol" in the web UI). **Works on every account**, and uses the tool agent only on a premium account, like `gpt-6-sol`. Defaults to `relay_batch`: 40/40 on the bench, 30/30 driving real pi, at 2.7 turns per bench task with the agent and 2.2 without, and without the agent it keeps out of its sandbox, which `gpt-6-sol` doesn't always (see below) |
-| `gpt-5.6-think-deeper` | Gpt_5_6_Reasoning | GPT-5.6 reasoning — 27/30 on the bench, tied with `gpt-5.5-think-deeper` |
+| `gpt-5.6-think-deeper` | Gpt_5_6_Reasoning | GPT-5.6 reasoning. With its `relay_batch` default: 20/20 on the bench (`baseline` 13/20), 10/10 driving real pi |
 | `gpt-5.6` / `gpt-5.6-quick` | Gpt_5_6_Chat | GPT-5.6 fast ("GPT 5.6 Quick response" in the web UI). **Weak at tool calling** — 7/30 on the bench (see below) |
-| `gpt-5.5-think-deeper` | Gpt_5_5_Reasoning | **Recommended default for agents/tool-calling** — 26/30 on the bench |
-| `gpt-5.5` / `gpt-5.5-quick` | Gpt_5_5_Chat | GPT-5.5 fast — 16/30 on the bench, the strongest benchmarked chat tone |
-| `m365-copilot` / `auto` | magic | Auto-routing — high-variance at tool-calling (confabulates; see below) |
+| `gpt-5.5-think-deeper` | Gpt_5_5_Reasoning | **Recommended default for agents/tool-calling**: with `relay_batch`, 20/20 on the bench and 10/10 driving real pi |
+| `gpt-5.5` / `gpt-5.5-quick` | Gpt_5_5_Chat | GPT-5.5 fast. `relay_batch`: 18/20 on the bench (`baseline` 17/30), 10/10 driving real pi |
+| `m365-copilot` / `auto` | magic | Auto-routing. `relay_batch`: 18/20 on the bench (`baseline` 8/20), 10/10 driving real pi |
 | `quick` | Gpt_5_5_Chat | Alias of `gpt-5.5` (its old `Gpt_Quick` tone was retired — see below) |
 | `think-deeper` | Gpt_5_5_Reasoning | Alias of `gpt-5.5-think-deeper` (its old `Gpt_Reasoning` tone was retired) |
 | `claude` / `claude-sonnet` / `claude-sonnet-4.6` | Claude_Sonnet | Real Anthropic Claude Sonnet 4.6 (agent-less path) — 78/90 on the bench with the `relay` framing (47/76 with `baseline`). Defaults to `relay_batch`: 40/40, and 21% fewer turns driving real pi (20/20). `claude-sonnet-4.5` is kept as an alias |
 | `claude-sonnet-5.5` | Claude_Sonnet (paid scenario) | Claude Sonnet 5.5. **Needs a paid/premium Copilot seat** — same tone as above, the scenario picks the model — and has a separate quota: 80 turns a day, 150 a week (see below). Defaults to `relay`, inherited from Sonnet 5 (not benchmarked yet) |
 | `claude-sonnet-5` | Claude_Sonnet_5 (paid scenario) | Claude Sonnet 5. **Needs a paid/premium Copilot seat**; no separate quota. 27/30 on the bench with the `relay` framing (6/40 with `baseline`; see below) |
-| `claude-sonnet-think-deeper` | Claude_Sonnet_Reasoning | Claude reasoning |
+| `claude-sonnet-think-deeper` | Claude_Sonnet_Reasoning | Named for Claude, but since October 2026 it identifies itself as GPT-5.6 / GPT-5.5. `relay_batch`: 19/20 on the bench (`baseline` 4/20), 10/10 driving real pi |
 | `claude-opus` / `claude-opus-5.5` | Claude_Opus (paid scenario) | Claude Opus 5.5. **Needs a paid/premium Copilot seat** and has a small separate quota: 40 turns a day (see below). 10/10 on the bench with `relay`; defaults to `relay_batch`. `claude-opus-5` is kept as an alias |
 | `claude-opus-4.8` | Claude_Opus (included scenario) | Claude Opus 4.8. **Premium accounts only**, but **no** priority-access quota. With its default `relay_batch` framing and the tool agent: 30/30 on the bench at 2.5 turns per task, 10/10 driving real pi. `claude-opus-4.5` is kept as an alias (it was Opus 4.5 until October 2026) |
-| `gpt-5.4` / `gpt-5.4-quick` | Gpt_5_4_* | GPT-5.4 |
-| `gpt-5.3` / `gpt-5.3-think-deeper` | Gpt_5_3_* | GPT-5.3 |
-| `gpt-5.2` / `gpt-5.2-think-deeper` | Gpt_5_2_* | GPT-5.2 |
+| `gpt-5.4` / `gpt-5.4-quick` | Gpt_5_4_* | GPT-5.4 (bare `gpt-5.4` is the reasoning tone). `relay_batch`: 20/20 and 18/20 on the bench, 10/10 each driving real pi |
+| `gpt-5.3` / `gpt-5.3-think-deeper` | Gpt_5_3_* | GPT-5.3. `relay_batch`: 18/20 and 20/20 on the bench, 10/10 each driving real pi |
+| `gpt-5.2` / `gpt-5.2-think-deeper` | Gpt_5_2_* | GPT-5.2. `relay_batch`: 20/20 each on the bench, 10/10 each driving real pi |
 
-Bench scores are 10 tasks × 3 reps with the confab-retry **off** (`M365_NO_CONFAB_RETRY=1`), so
-every first-try give-up counts, including ones the proxy's retry would normally recover
-([hypotheses §19](docs/hypotheses.md)). GPT-6's 24/30 was measured with the retry on, so it
+Bench scores are with the confab-retry **off** (`M365_NO_CONFAB_RETRY=1`), so every first-try
+give-up counts, including ones the proxy's retry would normally recover. The GPT-5.x, `m365-copilot`
+and `claude-sonnet-think-deeper` numbers are from October 2026, 20 tasks per framing on the included
+scenario ([hypotheses §40](docs/hypotheses.md)). GPT-6's 24/30 was measured with the retry on, so it
 isn't directly comparable.
 
-> **Microsoft retired the `*_Quick` tones; `*_Chat` tones replaced them.** Every `quick` /
-> `*-quick` model ID still works and resolves to the replacement `*_Chat` tone (e.g.
-> `gpt-5.3-quick` → `Gpt_5_3_Chat`), so existing configs need no change.
-
 > ✅ **For tool calling, use `gpt-5.5-think-deeper` (the default when no model is sent).**
-> The current agent + fenced/shell-routing path makes this reasoning tone robust:
-> 26/30 on the bench, tied with `gpt-5.6-think-deeper` and well ahead of every benchmarked
-> chat tone (docs/hypotheses.md §19), and 100% compliance and solve across prompt/toolset
-> sizes in the tool-call harness (§12.10/§12.11). The **default `m365-copilot` (magic) tone is *not* reliable** for
-> tools — it confabulates ("I no longer have access to the filesystem tools") and solves
-> ~0% of real tasks (§12.11); a proxy request with no `model` field already defaults to
-> `gpt-5.5-think-deeper` for this reason.
->
-> ⚠️ The **older** reasoning tones (`gpt-5.2`/`gpt-5.3`/`gpt-5.4` `*-think-deeper`, bare
-> `gpt-5.4`) route through M365's `DeepLeo` pipeline, which meta-analyzes the
-> injected prompt and can disengage from tools. Prefer `gpt-5.5-think-deeper`.
-> See [docs/m365-copilot-api.md](docs/m365-copilot-api.md) §5/§10.
+> With its `relay_batch` framing it solved 20/20 on the bench and 10/10 driving real pi (hypotheses
+> §40). Every GPT-5.x tool request now goes out in a
+> user-voice framing: since October 2026 the `<system>`-tagged one the proxy used to send trips M365's
+> jailbreak classifier on up to half the tasks, which had made `m365-copilot` (magic) and the older
+> reasoning tones look unreliable. Under `relay_batch` they solve 18–20/20 on the bench too.
 
 ### GPT-5.6 chat (`gpt-5.6` / `gpt-5.6-quick`) — newer, and worse at agentic work
 

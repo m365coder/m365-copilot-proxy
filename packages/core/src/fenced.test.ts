@@ -624,8 +624,19 @@ describe("defaultFramingForTone", () => {
     expect(formatFencedToolDefinitions([bash, readFile], "relay_batch")).not.toBe(formatFencedToolDefinitions([bash, readFile], "relay"));
   });
 
+  it("gives the GPT-5.x tones, magic and Claude_Sonnet_Reasoning relay_batch (docs §40)", () => {
+    // The <system>-tagged framings now trip the JailBreak Classifier on up to
+    // half the tasks on these paths; relay_batch 18–20/20 vs baseline 4–15/20.
+    for (const id of ["m365-copilot", "quick", "think-deeper", "gpt-5.2", "gpt-5.2-think-deeper", "gpt-5.3",
+      "gpt-5.3-think-deeper", "gpt-5.4-quick", "gpt-5.4", "gpt-5.4-think-deeper", "gpt-5.5", "gpt-5.5-think-deeper",
+      "gpt-5.6-think-deeper", "claude-sonnet-think-deeper"]) {
+      expect(defaultFramingForModel(id)).toBe("relay_batch");
+    }
+  });
+
   it("leaves every other tone on the bench-tuned baseline", () => {
-    for (const tone of ["magic", "Claude_Sonnet_Reasoning", "Gpt_5_5_Reasoning", undefined]) {
+    // Gpt_5_6_Chat: relay_batch won the bench but missed its real-pi gate (16/20, docs §40).
+    for (const tone of ["Gpt_5_6_Chat", "Claude_Fable", "Claude_Reasoning", undefined]) {
       expect(defaultFramingForTone(tone)).toBeUndefined();
     }
   });
@@ -701,9 +712,9 @@ describe("defaultFramingForModel", () => {
 
   it("falls through to the tone default for everything else", () => {
     expect(defaultFramingForModel("claude-opus")).toBe("relay_batch");
-    expect(defaultFramingForModel("claude-sonnet-think-deeper")).toBeUndefined(); // unmeasured: stays baseline
-    expect(defaultFramingForModel("m365-copilot")).toBeUndefined();
-    expect(defaultFramingForModel("gpt-5.5-think-deeper")).toBeUndefined();
+    expect(defaultFramingForModel("claude-sonnet-think-deeper")).toBe("relay_batch");
+    expect(defaultFramingForModel("m365-copilot")).toBe("relay_batch");
+    expect(defaultFramingForModel("gpt-5.5-think-deeper")).toBe("relay_batch");
   });
 });
 

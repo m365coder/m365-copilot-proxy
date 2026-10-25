@@ -406,6 +406,22 @@ export function currentFramingVariant(toneDefault?: string): string {
   return process.env.M365_FRAMING_VARIANT || toneDefault || "baseline";
 }
 
+// Tones that left `baseline` for `relay_batch` in October 2026 (docs §40, §41);
+// see defaultFramingForTone.
+const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
+  "magic",
+  "Gpt_5_2_Chat",
+  "Gpt_5_2_Reasoning",
+  "Gpt_5_3_Chat",
+  "Gpt_5_3_Reasoning",
+  "Gpt_5_4_Chat",
+  "Gpt_5_4_Reasoning",
+  "Gpt_5_5_Chat",
+  "Gpt_5_5_Reasoning",
+  "Gpt_5_6_Reasoning",
+  "Claude_Sonnet_Reasoning",
+]);
+
 /** The framing a tone should default to when the caller hasn't overridden it.
  *
  *  `Claude_Opus` — both models, Opus 4.8 (`claude-opus-4.8`, included scenario;
@@ -473,8 +489,21 @@ export function currentFramingVariant(toneDefault?: string): string {
  *  its sandbox: under relay_batch it never went in (0 of 80 bench tasks and pi
  *  runs, GPT-6 Sol 25 of 100), under honest 3 of 40 (GPT-6 Sol 17 of 20; docs §29).
  *
+ *  The GPT-5.x tones, `magic` and `Claude_Sonnet_Reasoning` (RELAY_BATCH_TONES)
+ *  moved off `baseline` in October 2026 (docs §40). On their shipped paths (the
+ *  GPT ones with the tool agent, `Claude_Sonnet_Reasoning` agent-less) the
+ *  `<system>`-tagged framings now trip the JailBreak Classifier on up to half
+ *  the tasks, and the user-voice relay_batch never did: 18–20/20 per model ID
+ *  against baseline's 4–15/20 (≥ 20 bench tasks per arm, Fisher p ≤ 0.047),
+ *  then 10/10 in real pi. `Gpt_5_3_Reasoning` (20/20 vs 16/20, p = 0.11) and
+ *  `Gpt_5_5_Reasoning` (20/20 vs 17/20, p = 0.23; `think-deeper`) moved with
+ *  them: relay_batch never did worse. `Gpt_5_6_Chat` (`gpt-5.6`) stays on
+ *  `baseline` for now: relay_batch beat it on the bench (20/20 vs 9/30) but
+ *  missed its real-pi gate (16/20).
+ *
  *  Every other tone keeps the bench-tuned `baseline` byte-for-byte. */
 export function defaultFramingForTone(tone?: string): string | undefined {
+  if (tone && RELAY_BATCH_TONES.has(tone)) return "relay_batch";
   if (tone === "Claude_Opus") return "relay_batch";
   if (tone === "Claude_Sonnet") return "relay_batch";
   if (tone === "Claude_Sonnet_5") return SONNET_5_DEFAULT_FRAMING;

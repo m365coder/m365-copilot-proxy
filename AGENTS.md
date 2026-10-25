@@ -171,10 +171,10 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   would delete the agent another host/PC is still using mid-conversation. A few orphaned
   lightweight bots are harmless. `updateBotInstructions()` is still dead code — we re-create
   rather than update in place. See API doc §10.
-- **Reasoning tones don't work with the agent.** `*-think-deeper` (and bare `gpt-5.4`) route through
-  the `DeepLeo` reasoning pipeline, which meta-analyzes the injected prompt instead of
-  obeying it. Only the default `magic` and the chat tones (`*_Chat`, what the `*-quick` IDs
-  resolve to) behave. The model can't be bound
+- **Reasoning tones didn't work with the agent — under the `<system>`-tagged framings.** `*-think-deeper`
+  (and bare `gpt-5.4`) route through the `DeepLeo` reasoning pipeline, which meta-analyzed the
+  injected prompt instead of obeying it. Under today's user-voice `relay_batch` every GPT-5.x
+  reasoning tone tool-calls with the agent (20/20 bench, 10/10 real pi each, docs §40, §41). The model can't be bound
   to our (declarative `minimalBots`) agent type at all — see API doc §10 *Agent types*.
 - **The `*_Quick` tones are retired — `*_Chat` replaced them. Don't map or probe a `*_Quick` tone.**
   The validator now rejects `Gpt_Quick` and `Gpt_5_{2,3,4}_Quick`, and the unversioned `Gpt_Chat` /
@@ -182,9 +182,17 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   `MODEL_TONES` keys; re-point them), and the generic `quick` / `think-deeper` pin to GPT-5.5.
   **Prefer GPT-5.5 over GPT-5.6 for both, and for the default**: 5.5 wins the chat half of the
   bench (16/30 vs 7/30) and the reasoning half is a tie (26/30 vs 27/30, confab-retry off), so
-  don't re-point them to 5.6 on the strength of the reasoning numbers.
+  don't re-point them to 5.6 on the strength of the reasoning numbers. Those are `baseline`
+  numbers; under `relay_batch` both chat tones solve the bench (`gpt-5.5` 18/20, `gpt-5.6` 20/20, §40),
+  which is no reason to move either.
   `scripts/tone-probe.mjs` ends with a `MAPPED:` line that flags any mapped tone that isn't LIVE.
   See docs/hypotheses.md §19.
+- **The `<system>`-tagged framings trip the JailBreak classifier on the GPT agent path (since Oct 2026).**
+  `baseline` and `minimal` drew 1–6 classifier refusals per 10 tasks on every GPT-5.x tone and `magic`;
+  the user-voice `relay_batch` drew none in 330 bench tasks (docs §40 F98). Every GPT-5.x tone but
+  `Gpt_5_6_Chat`, `magic` and `Claude_Sonnet_Reasoning` default to `relay_batch` (`RELAY_BATCH_TONES`);
+  `Gpt_5_6_Chat` won the bench under it but gave up in real pi (16/20), so it keeps `baseline` for now.
+  Don't move the others back to `baseline`.
 - **M365 disengages on large tool payloads.** Keep injected toolsets lean. This is why
   pi works and heavy harnesses (opencode) don't. The proxy also enforces one tool call per
   turn and strips M365's invented `{confidence}`/`{final}` JSON (`M365_ALLOW_MULTI_TOOL` to opt out).
@@ -280,6 +288,9 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   `relay_batch` on both paths (−32% turns, 60/60 + 40/40 bench, 30/30 real pi). F61 kept it on relay over 4 vs 2
   sandbox turns; the retest found 13 vs 15, so one small gap is not a reason to hold a default back
   — rerun it. See docs/hypotheses.md §23, §28.
+  **Since Oct 2026 GPT-6 Sol is the reverse on a non-premium account:** agent-less is the dead route and the
+  agent answers (§40 F101). Tool requests take the agent first and work; a tool-less one still goes
+  agent-less, into the dead route.
   `Gpt_61_Sol_Reasoning` (`gpt-6.1-sol`) splits the same way and is also routed on the included scenario:
   its paid scenario serves too but spends a `GPT61Sol*` budget (40/day, 75/week), so don't add it to
   `PAID_SCENARIO_TONES`. Its default is `relay_batch` too: it didn't add sandbox
