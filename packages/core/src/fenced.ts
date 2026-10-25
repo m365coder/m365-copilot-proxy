@@ -451,8 +451,8 @@ const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
  *  (docs §21). `Claude_Sonnet` defaults to relay_batch, for Sonnet 4.6: same
  *  solves, 14% fewer turns on the bench (80/80) and 21% fewer in real pi
  *  (39/39), and every pi edit still followed a read (docs §25 F61, F62).
- *  Sonnet 5 stays on relay — see SONNET_5_DEFAULT_FRAMING; Sonnet 5.5 has
- *  relay_batch too, benched on its own (SONNET_5_5_DEFAULT_FRAMING).
+ *  Sonnet 5 gets relay_onepass_first instead (SONNET_5_DEFAULT_FRAMING), and
+ *  Sonnet 5.5 relay_batch, benched on its own (SONNET_5_5_DEFAULT_FRAMING).
  *
  *  `Gpt_6_Reasoning` defaults to relay_batch. It used to keep `baseline` on the
  *  theory that it drives M365's GPT agent path — but it never served WITH the
@@ -532,11 +532,14 @@ export function defaultFramingForModel(model: string): string | undefined {
 // assistant role, rather than being told it is an agent with a second tool
 // format. Under `baseline` it reads the framing as a prompt injection and works
 // in its own sandbox instead (6/40); relay: 45/50, and 5/5 through real pi.
-// It does NOT follow Sonnet 4.6 to relay_batch: 15% fewer turns on the bench,
-// but 6% in real pi (4.90 vs 5.20 per run, 10/10 each, p = 0.47), where relay
-// already reads, fixes and checks in ~5 turns (docs §25 F63). Retested on the
-// paid scenario: 8% fewer in real pi (4.60 vs 5.00, 10/10 each, p = 0.25; §42 F106).
-const SONNET_5_DEFAULT_FRAMING = "relay";
+// It didn't follow Sonnet 4.6 to relay_batch: 15% fewer turns on the bench, but
+// 6% in real pi (4.90 vs 5.20 per run, 10/10 each, p = 0.47) and 8% on the paid
+// scenario (§25 F63, §42 F106), since it still read, ran pi's edit tool, ran the
+// check and replied in separate turns. relay_onepass_first asks, after the task,
+// for one bash block that reads, makes the change and runs the check: 10/10 in
+// real pi at 3.20 turns per run against relay's 4.90 (−35%, p < 0.001), bench
+// 10/10 at 2.4 turns per task against 3.4 (docs §43 F107).
+const SONNET_5_DEFAULT_FRAMING = "relay_onepass_first";
 
 // Sonnet 5.5 — `claude-sonnet-5.5`, and `claude-sonnet` on a premium account —
 // defaults to `relay_batch` (docs §42 F105, H26b). Its budget counts turns, like

@@ -514,11 +514,12 @@ describe("Disengage retry keeps a model's <system>-free framing", () => {
     return scripted.texts[1];
   }
 
-  it("retries Sonnet 5 with relay again, never a <system>-tagged framing", async () => {
+  it("retries Sonnet 5 with its own relay_onepass_first again, never a <system>-tagged framing", async () => {
     const retry = await disengageThenAnswer("claude-sonnet-5");
+    expect(scripted.texts[0]).not.toContain("<system>");
     expect(retry).not.toContain("<system>");
-    expect(retry).toContain("guide me through this from my terminal, one command at a time");
-    expect(retry).not.toContain("put as much as you can into one block");
+    expect(retry).toContain("your first block can do the whole job");
+    expect(retry).toContain("Before you start: the task says what should work");
   });
 
   it("sends Opus, Sonnet 4.6 and GPT-6 relay_batch on the first try and keeps it on the retry (§24, §25)", async () => {

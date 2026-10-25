@@ -651,8 +651,8 @@ describe("defaultFramingForTone", () => {
     expect(defaultFramingForTone("Claude_Sonnet")).toBe("relay_batch");
   });
 
-  it("gives the Claude_Sonnet_5 tone relay — Sonnet 5's own default (§25 F63)", () => {
-    expect(defaultFramingForTone("Claude_Sonnet_5")).toBe("relay");
+  it("gives the Claude_Sonnet_5 tone relay_onepass_first — Sonnet 5's own default (§43 F107)", () => {
+    expect(defaultFramingForTone("Claude_Sonnet_5")).toBe("relay_onepass_first");
   });
 
   it("gives GPT-6 relay_batch — it runs agent-less, next to M365's code interpreter (#41)", () => {
@@ -773,6 +773,13 @@ describe("the batched follow-up variants (docs §43)", () => {
 describe("defaultFramingForModel", () => {
   // `Claude_Sonnet` is Sonnet 4.6 on the included scenario and Sonnet 5.5 on
   // the paid one, so the tone alone can't choose Sonnet 5.5's framing.
+  it("gives Sonnet 5 relay_onepass_first, including unmapped Sonnet 5 strings", () => {
+    // relay_batch saved it 6–8% in real pi; one pass, asked for after the task, 35% (§43 F107).
+    for (const id of ["claude-sonnet-5", "claude-sonnet-5[1m]"]) {
+      expect(defaultFramingForModel(id)).toBe("relay_onepass_first");
+    }
+  });
+
   it("gives Sonnet 5.5 relay_batch — its turn-counted budget (§42 F105: −28% turns in real pi)", () => {
     for (const id of ["claude-sonnet-5.5", "claude-sonnet-5-5-20261001"]) {
       expect(defaultFramingForModel(id)).toBe("relay_batch");

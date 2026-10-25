@@ -322,7 +322,7 @@ without NixOS: `nix run github:cramt/m365-copilot-proxy -- 4141`.
 | `claude` / `claude-sonnet` | Claude_Sonnet | **Claude Sonnet 5.5 on a premium account** (the paid scenario, with Sonnet 5.5's quota and `relay_batch` framing, as `claude-sonnet-5.5` below), Claude Sonnet 4.6 on any other. Use `claude-sonnet-4.6` to stay on Sonnet 4.6 |
 | `claude-sonnet-4.6` | Claude_Sonnet (included scenario) | Real Anthropic Claude Sonnet 4.6 on every account, no quota (agent-less path) — 78/90 on the bench with the `relay` framing (47/76 with `baseline`). Defaults to `relay_batch`: 40/40, and 21% fewer turns driving real pi (20/20). `claude-sonnet-4.5` is kept as an alias |
 | `claude-sonnet-5.5` | Claude_Sonnet (paid scenario) | Claude Sonnet 5.5. **Needs a paid/premium Copilot seat** — same tone as above, the scenario picks the model — and has a separate quota: 80 turns a day, 150 a week (see below). Defaults to `relay_batch`: 10/10 on the bench and 10/10 driving real pi, at 28% fewer turns than `relay`, which the quota counts (see below) |
-| `claude-sonnet-5` | Claude_Sonnet_5 (paid scenario) | Claude Sonnet 5. **Needs a paid/premium Copilot seat**; no separate quota. 27/30 on the bench with the `relay` framing (6/40 with `baseline`; see below) |
+| `claude-sonnet-5` | Claude_Sonnet_5 (paid scenario) | Claude Sonnet 5. **Needs a paid/premium Copilot seat**; no separate quota. 27/30 on the bench with the `relay` framing (6/40 with `baseline`). Defaults to `relay_onepass_first`: 10/10 driving real pi at 3.2 turns per run against `relay`'s 4.9 (see below) |
 | `claude-sonnet-think-deeper` | Claude_Sonnet_Reasoning | Named for Claude, but since October 2026 it identifies itself as GPT-5.6 / GPT-5.5. `relay_batch`: 19/20 on the bench (`baseline` 4/20), 10/10 driving real pi |
 | `claude-opus` / `claude-opus-5.5` | Claude_Opus (paid scenario) | Claude Opus 5.5. **Needs a paid/premium Copilot seat** and has a small separate quota: 40 turns a day (see below). 10/10 on the bench with `relay`; defaults to `relay_batch`. `claude-opus-5` is kept as an alias |
 | `claude-opus-4.8` | Claude_Opus (included scenario) | Claude Opus 4.8. **Premium accounts only**, but **no** priority-access quota. With its default `relay_batch` framing and the tool agent: 30/30 on the bench at 2.5 turns per task, 10/10 driving real pi. `claude-opus-4.5` is kept as an alias (it was Opus 4.5 until October 2026) |
@@ -483,20 +483,21 @@ coding loop, one per tool call). The proxy handles it like the Opus quota below:
 429 once it's used up, and an opt-in fallback, `M365_SONNET_FALLBACK_MODEL` (e.g. `claude-sonnet-5`
 or `claude-sonnet-4.6`, neither metered). Sonnet 5 has no such quota.
 
-Sonnet 5 arrives with **its own tools** (`bash_tool`, `create_file`, …) running in a remote
-sandbox (`/home/claude`) that cannot see your files, and it reads the proxy's usual
-`<system>`-tagged tool framing as a prompt injection — so with that framing it inspects its own
-empty sandbox and reports that your files don't exist (6/40 on the bench). Sonnet 5.5 has the same
-sandbox. The proxy therefore gives every Sonnet model a user-voice framing instead. Sonnet 5's
-default is `relay`: a plain note
-asking it to guide you through your terminal one command at a time, which also tells it the sandbox
-is the wrong machine. That scores **27/30** on the bench (from 5/30) and solved **5/5** fix-bug runs
-through real pi. Sonnet 4.6 beat `baseline` with it too (78/90 vs 47/76), and now defaults to
-`relay_batch`, the same note asking it to put as much as it can into each block: same solves, 21%
-fewer turns through real pi (39/39). On Sonnet 5 that saved only 6% in pi, so it stays on `relay`.
-Sonnet 5.5, whose quota counts turns, defaults to `relay_batch`: driving real pi it solved 10/10 under
-either framing, at 3.4 turns per run against `relay`'s 4.7 (hypotheses §42), so a day's 80 turns go about
-40% further. Sonnet 5 stays on `relay`: retested in October 2026, batching saved it 8% of turns in pi.
+Sonnet 5 arrives with **its own tools** (`bash_tool`, `create_file`, …) running in a remote sandbox
+(`/home/claude`) that cannot see your files, and it reads the proxy's usual `<system>`-tagged tool framing
+as a prompt injection — so with that framing it inspects its own empty sandbox and reports that your files
+don't exist (6/40 on the bench). Sonnet 5.5 has the same sandbox. The proxy therefore gives every Sonnet
+model a user-voice framing instead, built on `relay`: a plain note asking it to guide you through your
+terminal one command at a time, which also tells it the sandbox is the wrong machine. On Sonnet 5 that
+scores **27/30** on the bench (from 5/30) and solved **5/5** fix-bug runs through real pi. Sonnet 4.6 beat
+`baseline` with it too (78/90 vs 47/76), and now defaults to `relay_batch`, the same note asking it to put
+as much as it can into each block: same solves, 21% fewer turns through real pi (39/39). Sonnet 5.5, whose
+quota counts turns, defaults to `relay_batch` too: driving real pi it solved 10/10 under either framing,
+at 3.4 turns per run against `relay`'s 4.7 (hypotheses §42), so a day's 80 turns go about 40% further.
+Sonnet 5 batched only 6–8% under `relay_batch`, because it still read, ran pi's `edit` tool, ran the check
+and replied in separate turns. Its default is `relay_onepass_first`, which asks, after the task, for one
+bash block that reads, makes the change and runs the check: 10/10 in real pi at 3.2 turns per run against
+`relay`'s 4.9, and 10/10 on the bench (hypotheses §43).
 Override with `M365_FRAMING_VARIANT` as usual. Details: hypotheses §21, §25, §26.
 
 ### Opus (`claude-opus`, `claude-opus-4.8`) — two models, one with a small quota

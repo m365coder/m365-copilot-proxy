@@ -265,11 +265,12 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   see this (all are `DeepLeo`); only self-ID can. See docs/hypotheses.md §21, §26, #37.
 - **Sonnet 5 has its own tools in a remote sandbox (Sonnet 5.5 too) and reads `<system>` tags as an injection.**
   Nothing client-side disables `bash_tool`/`create_file` (`/home/claude`), and a `<system>` block in
-  the user turn makes it disregard the framing and work there ("no such file"). Its default is the
-  user-voice `relay` framing (45/50 vs 6/40; 5/5 in real pi). Sonnet 4.6 beat baseline with relay too
+  the user turn makes it disregard the framing and work there ("no such file"). Its framings are
+  user-voice, built on `relay` (45/50 vs 6/40; 5/5 in real pi). Sonnet 4.6 beat baseline with relay too
   (78/90 vs 47/76) and now defaults to `relay_batch` (same solves, −21% turns in real pi, §25 F62);
-  batching saved Sonnet 5 only 6% in pi, so `SONNET_5_DEFAULT_FRAMING` keeps it on relay (F63) — the
-  one place the Sonnets differ (retested in §42 F106: −8%, p = 0.25); Sonnet 5.5 (same `/home/claude`
+  batching saved Sonnet 5 only 6–8% in pi (F63, §42 F106), so `SONNET_5_DEFAULT_FRAMING` is
+  `relay_onepass_first` instead: one bash block that reads, changes and checks, asked for after the task
+  (−35% pi turns, 10/10, §43 F107) — the one place the Sonnets differ; Sonnet 5.5 (same `/home/claude`
   sandbox, §26) has its own `SONNET_5_5_DEFAULT_FRAMING`, `relay_batch`: −28% turns in real pi, which its
   80-a-day budget counts (§42 F105). `relay_batch` and the variants built on it are plain relay
   when the toolset has no shell, with no `firstNote`: asked for a script it couldn't run, Sonnet 4.6

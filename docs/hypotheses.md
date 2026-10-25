@@ -6214,4 +6214,5 @@ Round 2 (Oct 25 07:40–09:00Z), real pi, turns per run against each base:
 reply (2.0 turns per task); real pi on the premium account (paid scenario, agent route) 10/10 at 2.50 turns
 per run (fix-bug 2,2,2,2,2; multi 3,3,3,3,3). That completes H43a: **`gpt-5.6` defaults to
 `relay_echo_first`**. Sonnet 5 under `relay_onepass_first`, the bench on the premium account (paid scenario,
-agent-less): 10/10 at 2.40 turns per task against `relay`'s 3.40 (F106), 4 sandbox turns against 3.
+agent-less): 10/10 at 2.40 turns per task against `relay`'s 3.40 (F106), 4 sandbox turns against 3. That
+completes H43b: **`claude-sonnet-5` defaults to `relay_onepass_first`**.
