@@ -189,12 +189,22 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   See docs/hypotheses.md §19.
 - **The `<system>`-tagged framings trip the JailBreak classifier on the GPT agent path (since Oct 2026).**
   `baseline` and `minimal` drew 1–6 classifier refusals per 10 tasks on every GPT-5.x tone and `magic`;
-  the user-voice `relay_batch` drew none in 330 bench tasks (docs §40 F98). Every GPT-5.x tone, `magic` and
+  the user-voice `relay_batch` drew none in 450 bench tasks, on both scenarios (docs §40 F98, §41 F102). Every GPT-5.x tone, `magic` and
   `Claude_Sonnet_Reasoning` default to `relay_batch` (`RELAY_BATCH_TONES`), and `Gpt_5_6_Chat` to
   `relay_echo`: under relay_batch it gave up on the turn after a tool result (22/30 in real pi), and
   relay_echo pastes each result back in the user's voice (59/60, both scenarios). Don't move any of them back to
   `baseline`. A follow-up turn carries only the tool results, not the framing — `TranscriptStyle`'s
   `turnNote` / `toolResults` are the levers for that turn (§41).
+- **A premium account routes every tone on the paid scenario; nothing on the token says which account it
+  is** (docs §41). `getScenarioForModel` tries paid for every model that `prefersPaidScenario`; a
+  non-premium account answers `ForbiddenRequest` / `InvalidCopilotLicense` (F46), the handler re-sends on
+  the included scenario in a fresh conversation, and the process remembers (`notePaidSeat`;
+  `M365_PAID_SEAT=1`/`0` says so up front). A paid-only model gets a 403 there instead of the licence
+  text as an answer. The only IDs kept on the included scenario are the ones that exist to stay off a
+  priority-access budget: `claude-opus-4.8`, `claude-sonnet-4.6` (and `-4.5`), `gpt-6.1-sol-included`. So
+  `claude-sonnet` is Sonnet 5.5 on a premium account (metered, `relay_batch`) and Sonnet 4.6 elsewhere, and
+  `gpt-6.1-sol` spends its `GPT61Sol*` budget there (`M365_GPT61_SOL_FALLBACK_MODEL`). The framing is
+  re-chosen on that re-send: the included model can be a different one.
 - **M365 disengages on large tool payloads.** Keep injected toolsets lean. This is why
   pi works and heavy harnesses (opencode) don't. The proxy also enforces one tool call per
   turn and strips M365's invented `{confidence}`/`{final}` JSON (`M365_ALLOW_MULTI_TOOL` to opt out).
@@ -241,7 +251,9 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   §24 F56/F60; GPT-6 a user-voice relay for its sandbox, batched since §25 — see the agent bullet
   below). See docs/hypotheses.md §17, §22, §25.
 - **One tone can be two models — `Claude_Sonnet` is Sonnet 4.6 (included) and Sonnet 5.5 (paid);
-  `Claude_Sonnet_5` is Sonnet 4.6 (included) and Sonnet 5 (paid).** Microsoft swapped the paid
+  `Claude_Sonnet_5` is Sonnet 4.6 (included) and Sonnet 5 (paid).** Which one `claude-sonnet` gets
+  depends on the account since §41 (above): `isSonnet55Model()` asks what the request is served, not what
+  the ID says. Microsoft swapped the paid
   `Claude_Sonnet` from Sonnet 5 to 5.5 on 2026-10-06 and moved Sonnet 5 to the new tone, unannounced
   (self-ID + a new `metering` key gave it away), so re-run the self-ID probes now and then.
   So routing follows the **model ID** (`getScenarioForModel`, `PAID_SCENARIO_MODELS`), and so does
@@ -255,8 +267,9 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   user-voice `relay` framing (45/50 vs 6/40; 5/5 in real pi). Sonnet 4.6 beat baseline with relay too
   (78/90 vs 47/76) and now defaults to `relay_batch` (same solves, −21% turns in real pi, §25 F62);
   batching saved Sonnet 5 only 6% in pi, so `SONNET_5_DEFAULT_FRAMING` keeps it on relay (F63) — the
-  one place the Sonnets differ; Sonnet 5.5 (same `/home/claude` sandbox, §26) inherits relay via
-  `SONNET_5_5_DEFAULT_FRAMING`, unbenched. `relay_batch` is plain relay when the toolset has no shell: asked
+  one place the Sonnets differ (retested in §42 F106: −8%, p = 0.25); Sonnet 5.5 (same `/home/claude`
+  sandbox, §26) has its own `SONNET_5_5_DEFAULT_FRAMING`, `relay_batch`: −28% turns in real pi, which its
+  80-a-day budget counts (§42 F105). `relay_batch` is plain relay when the toolset has no shell: asked
   for a script it couldn't run, Sonnet 4.6 claimed it had only its sandbox tools (§25 H25b) — and
   `proxy-verify --tools` is shell-less. Don't move `Claude_Sonnet` back to a `<system>`-tagged variant, and don't wrap the note
   in `<user>` tags either: tags are just text to it, and the variant that did (`relay_inline`,
@@ -292,10 +305,13 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   — rerun it. See docs/hypotheses.md §23, §28.
   **Since Oct 2026 GPT-6 Sol is the reverse on a non-premium account:** agent-less is the dead route and the
   agent answers (§40 F101). Tool requests take the agent first and work; a tool-less one still goes
-  agent-less, into the dead route.
-  `Gpt_61_Sol_Reasoning` (`gpt-6.1-sol`) splits the same way and is also routed on the included scenario:
-  its paid scenario serves too but spends a `GPT61Sol*` budget (40/day, 75/week), so don't add it to
-  `PAID_SCENARIO_TONES`. Its default is `relay_batch` too: it didn't add sandbox
+  agent-less, into the dead route. Its
+  `find-needle` behaviour changed on the included scenario but not the paid one (F100), so a premium
+  account gets the paid scenario's (§41).
+  `Gpt_61_Sol_Reasoning` (`gpt-6.1-sol`) splits the same way. Its paid scenario spends a `GPT61Sol*`
+  budget (40/day, 75/week, `METERED_BUDGETS`): a premium account uses it anyway (§41), with
+  `gpt-6.1-sol-included` as the unmetered ID; don't add it to `PAID_SCENARIO_TONES`, which would take
+  it away from non-premium accounts. Its default is `relay_batch` too: it didn't add sandbox
   turns, and it cut turns 17–47% at 40/40 bench, 30/30 real pi. See docs/hypotheses.md §27.
   Agent-less the two are the same to the bench (same solves and turns, framing by framing), except
   that GPT-6.1 Sol stays out of its sandbox when the user-voice note says to (relay_batch: 0 of 80

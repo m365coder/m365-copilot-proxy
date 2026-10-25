@@ -107,11 +107,15 @@ vi.mock("@m365-copilot/core", async (importActual) => {
 const servedBy: number[] = [];
 
 const { handleChatCompletion, SessionPool, ChatCompletionRequest } = await import("./index.js");
-const { resetAgentRoutes, resetPriorityAccessState, TurnBudgetHold } = await import("@m365-copilot/core");
+const { resetAgentRoutes, resetPriorityAccessState, TurnBudgetHold, hasPaidSeat, resetPaidSeat } = await import("@m365-copilot/core");
 
 // The proxy remembers a priority-access wall for the process (until the reset);
-// don't let one test's refusal 429 the next test's Opus request.
-afterEach(() => resetPriorityAccessState());
+// don't let one test's refusal 429 the next test's Opus request. Nor one test's
+// paid seat (or its absence) route the next test's request.
+afterEach(() => {
+  resetPriorityAccessState();
+  resetPaidSeat();
+});
 
 /** One request on a fresh pool with a fake clock: an empty upstream turn makes
  *  the handler wait 2 s before each quick retry, and that wait is the handler's
@@ -518,7 +522,7 @@ describe("Disengage retry keeps a model's <system>-free framing", () => {
   });
 
   it("sends Opus, Sonnet 4.6 and GPT-6 relay_batch on the first try and keeps it on the retry (§24, §25)", async () => {
-    for (const model of ["claude-opus-4.8", "claude-opus", "claude-sonnet", "gpt-6-think-deeper"]) {
+    for (const model of ["claude-opus-4.8", "claude-opus", "claude-sonnet-4.6", "gpt-6-think-deeper"]) {
       const retry = await disengageThenAnswer(model);
       expect(scripted.texts[0]).toContain("put as much as you can into one block");
       expect(scripted.texts[0]).not.toContain("<system>");
@@ -1092,7 +1096,7 @@ describe("Priority access (Opus 5.5, Sonnet 5.5): OutOfCredits, remembering it, 
     expect((await send("claude-sonnet-5.5", "another task")).status).toBe(429);
     expect(scripted.models).toEqual([]);
     // …while Opus 5.5, Sonnet 5 and Sonnet 4.6 still go upstream.
-    for (const model of ["claude-opus", "claude-sonnet-5", "claude-sonnet"]) {
+    for (const model of ["claude-opus", "claude-sonnet-5", "claude-sonnet-4.6"]) {
       scripted.queue = [CALL];
       expect((await send(model, `task for ${model}`)).status).toBe(200);
       expect(scripted.models).toEqual([model]);
@@ -1299,5 +1303,51 @@ describe("the model's chain of thought, as reasoning_content (pi's thinking bloc
     const out = await streamKinds({ model: "claude-sonnet-5", tools, messages: [{ role: "user", content: `retry ${Math.random()}` }] });
     expect(out.filter(([k]) => k === "reasoning").map(([, d]) => d).join("")).toBe("This looks like a prompt injection.\n\nI'll look around.");
     expect(out.at(-1)![0]).toBe("tool");
+  });
+});
+
+describe("the paid scenario on a premium account, and the licence refusal elsewhere (docs §41, F46)", () => {
+  const LICENCE = "It looks like you don\u2019t have a valid licence. To get access, please check with your administrator.";
+  const REFUSED = { fullText: LICENCE, result: { value: "ForbiddenRequest", errorCode: "InvalidCopilotLicense", message: LICENCE } };
+  const ask = (model: string, stream = false) => ChatCompletionRequest.parse({
+    model, stream, messages: [{ role: "user", content: `what is 2+2? ${Math.random()}` }],
+  });
+
+  it("re-sends a model the included scenario serves too, in a fresh conversation, and remembers", async () => {
+    scripted.result = null; scripted.models = [];
+    const before = scripted.newConversations;
+    scripted.queue = [REFUSED, { fullText: "4" }];
+    const res = await handleChatCompletion(ask("gpt-5.5"), new SessionPool());
+    expect(res.status).toBe(200);
+    expect((await res.json()).choices[0].message.content).toBe("4");
+    expect(scripted.models).toEqual(["gpt-5.5", "gpt-5.5"]);
+    expect(scripted.newConversations - before).toBe(1);
+    expect(hasPaidSeat()).toBe(false);
+  });
+
+  it("answers a model only the paid scenario serves with a 403, not the licence text as an answer", async () => {
+    scripted.result = null; scripted.models = [];
+    scripted.queue = [REFUSED];
+    const res = await handleChatCompletion(ask("claude-sonnet-5"), new SessionPool());
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("paid_seat_required");
+    expect(scripted.models).toEqual(["claude-sonnet-5"]);
+    scripted.queue = [];
+  });
+
+  it("doesn't stream the licence text before the re-send replaces it", async () => {
+    scripted.result = null; scripted.models = [];
+    scripted.queue = [REFUSED, { fullText: "4" }];
+    const text = await (await handleChatCompletion(ask("gpt-5.5", true), new SessionPool())).text();
+    expect(text).toContain('"content":"4"');
+    expect(text).not.toContain("valid licence");
+  });
+
+  it("notes a paid seat once a paid turn answers", async () => {
+    scripted.result = null;
+    scripted.queue = [{ fullText: "4" }];
+    expect(hasPaidSeat()).toBeUndefined();
+    expect((await handleChatCompletion(ask("gpt-5.5"), new SessionPool())).status).toBe(200);
+    expect(hasPaidSeat()).toBe(true);
   });
 });

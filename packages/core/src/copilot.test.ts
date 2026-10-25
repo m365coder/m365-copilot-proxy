@@ -2,12 +2,19 @@ import { describe, expect, it, afterEach } from "vitest";
 import {
   AGENT_CLAUDE_TONES,
   AGENTLESS_TOOL_TONES,
+  couldBeLicenceRefusalPrefix,
   getAvailableModels,
   getScenarioForModel,
+  hasPaidSeat,
+  isLicenceRefusal,
+  notePaidSeat,
+  prefersPaidScenario,
+  resetPaidSeat,
   getScenarioForTone,
   getToneForModel,
   INCLUDED_SCENARIO_MODELS,
   isIncludedOpusModel,
+  isIncludedSonnetModel,
   meteredBudgetOf,
   priorityAccessFallbackModel,
   isSonnet5Model,
@@ -23,6 +30,9 @@ import {
   toneUsesToolAgent,
   toolRequestUsesAgent,
 } from "./copilot.js";
+
+// The seat a test learned (or set) must not route the next test's request.
+afterEach(() => resetPaidSeat());
 
 const INCLUDED = { scenario: "OfficeWebIncludedCopilot", licenseType: "Starter" };
 const PAID = { scenario: "OfficeWebPaidCopilot", licenseType: "Premium" };
@@ -48,10 +58,27 @@ describe("Sonnet routing — one tone, two models", () => {
     expect(getAvailableModels()).toContain("claude-sonnet-5");
   });
 
-  it("keeps every other Sonnet ID on the included scenario (Sonnet 4.6)", () => {
-    for (const id of ["claude", "claude-sonnet", "claude-sonnet-4.5", "claude-sonnet-4.6"]) {
+  it("keeps claude-sonnet-4.6 (and its legacy -4.5) on the included scenario everywhere: Sonnet 4.6, off Sonnet 5.5's budget", () => {
+    for (const id of ["claude-sonnet-4.5", "claude-sonnet-4.6", "claude-sonnet-4-6-20260101", "claude-sonnet-4-5-20250929"]) {
       expect(getToneForModel(id)).toBe("Claude_Sonnet");
+      expect(isIncludedSonnetModel(id)).toBe(true);
+      notePaidSeat(true);
       expect(getScenarioForModel(id)).toEqual(INCLUDED);
+      expect(isSonnet55Model(id)).toBe(false);
+      resetPaidSeat();
+    }
+  });
+
+  it("serves claude-sonnet as Sonnet 5.5 on a premium account and Sonnet 4.6 on any other (docs §41)", () => {
+    for (const id of ["claude", "claude-sonnet"]) {
+      expect(getScenarioForModel(id)).toEqual(PAID); // tried while the seat is unknown
+      expect(isSonnet55Model(id)).toBe(true);
+      expect(meteredBudgetOf(id)).toBe("sonnet-5.5");
+      notePaidSeat(false);
+      expect(getScenarioForModel(id)).toEqual(INCLUDED);
+      expect(isSonnet55Model(id)).toBe(false);
+      expect(meteredBudgetOf(id)).toBeNull();
+      resetPaidSeat();
     }
   });
 
@@ -79,11 +106,14 @@ describe("Sonnet routing — one tone, two models", () => {
   });
 
   it("does not mistake older Sonnet names for Sonnet 5 or 5.5", () => {
+    // Without a paid seat; on a premium account the shared tone is Sonnet 5.5 anyway.
+    notePaidSeat(false);
     for (const id of ["claude-sonnet-4-5-20250929", "claude-3-5-sonnet", "claude-sonnet-4.5", "claude-sonnet-50", "claude-sonnet-5.50", "claude-sonnet-5.1"]) {
       expect(isSonnet5Model(id)).toBe(false);
       expect(isSonnet55Model(id)).toBe(false);
       expect(getScenarioForModel(id)).toEqual(INCLUDED);
     }
+    resetPaidSeat();
   });
 
   it("never treats a non-Sonnet tone as Sonnet 5 or 5.5, whatever the string says", () => {
@@ -96,7 +126,11 @@ describe("Sonnet routing — one tone, two models", () => {
     expect(getScenarioForModel("claude-opus")).toEqual(PAID);
     expect(getScenarioForModel("claude-opus-5[1m]")).toEqual(PAID);
     expect(getScenarioForModel("gpt-6-think-deeper")).toEqual(PAID);
+    // GPT-5.5 is paid only until the account turns out to have no paid seat (§41).
+    expect(getScenarioForModel("gpt-5.5-think-deeper")).toEqual(PAID);
+    notePaidSeat(false);
     expect(getScenarioForModel("gpt-5.5-think-deeper")).toEqual(INCLUDED);
+    resetPaidSeat();
   });
 
   it("lets the env override win for model routing too", () => {
@@ -182,11 +216,15 @@ describe("GPT-6 Sol routing (#23)", () => {
     delete process.env.M365_FORCE_AGENT;
   });
 
-  it("maps gpt-6-sol to Gpt_6_Sol_Reasoning on the INCLUDED scenario — it isn't gated", () => {
+  it("maps gpt-6-sol to Gpt_6_Sol_Reasoning — not gated: paid on a premium account, included elsewhere (§41)", () => {
     expect(getToneForModel("gpt-6-sol")).toBe("Gpt_6_Sol_Reasoning");
     expect(getAvailableModels()).toContain("gpt-6-sol");
     expect(PAID_SCENARIO_TONES.has("Gpt_6_Sol_Reasoning")).toBe(false);
+    expect(getScenarioForModel("gpt-6-sol")).toEqual(PAID);
+    expect(meteredBudgetOf("gpt-6-sol")).toBeNull(); // its paid turns carry GPT61Sol* keys and lower neither (§40 F100)
+    notePaidSeat(false);
     expect(getScenarioForModel("gpt-6-sol")).toEqual(INCLUDED);
+    resetPaidSeat();
   });
 
   it("doesn't advertise Gpt_6_Sol_Chat — it serves the GPT-5 chat model", () => {
@@ -235,12 +273,28 @@ describe("GPT-6.1 Sol routing (§27)", () => {
     resetAgentRoutes();
   });
 
-  it("maps gpt-6.1-sol to Gpt_61_Sol_Reasoning on the INCLUDED scenario — every account, unmetered", () => {
+  it("maps gpt-6.1-sol to Gpt_61_Sol_Reasoning — paid and metered on a premium account, included elsewhere (§41)", () => {
     expect(getToneForModel("gpt-6.1-sol")).toBe("Gpt_61_Sol_Reasoning");
     expect(getAvailableModels()).toContain("gpt-6.1-sol");
     expect(PAID_SCENARIO_TONES.has("Gpt_61_Sol_Reasoning")).toBe(false);
+    expect(getScenarioForModel("gpt-6.1-sol")).toEqual(PAID);
+    expect(meteredBudgetOf("gpt-6.1-sol")).toBe("gpt-6.1-sol");
+    notePaidSeat(false);
     expect(getScenarioForModel("gpt-6.1-sol")).toEqual(INCLUDED);
     expect(meteredBudgetOf("gpt-6.1-sol")).toBeNull();
+    resetPaidSeat();
+  });
+
+  it("keeps gpt-6.1-sol-included on the included scenario on every account — its budget fallback", () => {
+    expect(getToneForModel("gpt-6.1-sol-included")).toBe("Gpt_61_Sol_Reasoning");
+    expect(getScenarioForModel("gpt-6.1-sol-included")).toEqual(INCLUDED);
+    expect(meteredBudgetOf("gpt-6.1-sol-included")).toBeNull();
+    expect(isPremiumOnlyModel("gpt-6.1-sol-included")).toBe(false);
+    process.env.M365_GPT61_SOL_FALLBACK_MODEL = "gpt-6.1-sol-included";
+    expect(priorityAccessFallbackModel("gpt-6.1-sol")).toBe("gpt-6.1-sol-included");
+    process.env.M365_GPT61_SOL_FALLBACK_MODEL = "gpt-6.1-sol";
+    expect(priorityAccessFallbackModel("gpt-6.1-sol")).toBeNull(); // metered itself
+    delete process.env.M365_GPT61_SOL_FALLBACK_MODEL;
   });
 
   it("takes the agent only on a premium account, learned per tone", () => {
@@ -331,7 +385,7 @@ describe("Opus routing", () => {
   it("knows which turns are metered — Opus 5.5's and Sonnet 5.5's, not Opus 4.8's or Sonnet 5's", () => {
     for (const id of ["claude-opus", "claude-opus-5", "claude-opus-5.5", "claude-opus-5[1m]"]) expect(meteredBudgetOf(id)).toBe("opus");
     for (const id of ["claude-sonnet-5.5", "claude-sonnet-5-5-20261001"]) expect(meteredBudgetOf(id)).toBe("sonnet-5.5");
-    for (const id of ["claude-opus-4.8", "claude-opus-4.5", "claude-opus-4-5-20251101", "claude-sonnet-5", "claude-sonnet", "gpt-6-think-deeper"]) {
+    for (const id of ["claude-opus-4.8", "claude-opus-4.5", "claude-opus-4-5-20251101", "claude-sonnet-5", "claude-sonnet-4.6", "gpt-6-think-deeper"]) {
       expect(meteredBudgetOf(id)).toBeNull();
     }
   });
@@ -452,5 +506,70 @@ describe("getScenarioForTone", () => {
       scenario: "OfficeWebIncludedCopilot",
       licenseType: "Enterprise",
     });
+  });
+});
+
+describe("premium accounts on the paid scenario (docs §41)", () => {
+  afterEach(() => {
+    resetPaidSeat();
+    delete process.env.M365_PAID_SEAT;
+    delete process.env.M365_SCENARIO;
+  });
+
+  const PREFERS_PAID = ["m365-copilot", "quick", "think-deeper", "gpt-5.2", "gpt-5.3-think-deeper", "gpt-5.4", "gpt-5.5",
+    "gpt-5.6", "gpt-5.6-think-deeper", "gpt-6-sol", "gpt-6.1-sol", "claude-sonnet-think-deeper", "claude-sonnet", "claude"];
+  const PAID_ONLY = ["claude-opus", "claude-sonnet-5", "claude-sonnet-5.5", "claude-sonnet-5-5-20261001", "gpt-6-think-deeper"];
+  const QUOTA_FREE = ["claude-sonnet-4.6", "claude-sonnet-4.5", "claude-opus-4.8", "gpt-6.1-sol-included"];
+
+  it("tries the paid scenario while the seat is unknown, and keeps it on a premium account", () => {
+    expect(hasPaidSeat()).toBeUndefined();
+    for (const id of PREFERS_PAID) {
+      expect(prefersPaidScenario(id)).toBe(true);
+      expect(getScenarioForModel(id)).toEqual(PAID);
+    }
+    notePaidSeat(true);
+    for (const id of PREFERS_PAID) expect(getScenarioForModel(id)).toEqual(PAID);
+  });
+
+  it("routes them on the included scenario once the account has no paid seat; paid-only models stay paid", () => {
+    notePaidSeat(false);
+    for (const id of PREFERS_PAID) expect(getScenarioForModel(id)).toEqual(INCLUDED);
+    for (const id of PAID_ONLY) expect(getScenarioForModel(id)).toEqual(PAID);
+  });
+
+  it("keeps the quota-free IDs on the included scenario even on a premium account", () => {
+    notePaidSeat(true);
+    for (const id of QUOTA_FREE) {
+      expect(prefersPaidScenario(id)).toBe(false);
+      expect(getScenarioForModel(id)).toEqual(INCLUDED);
+    }
+  });
+
+  it("takes M365_PAID_SEAT over what the process learned", () => {
+    notePaidSeat(true);
+    process.env.M365_PAID_SEAT = "0";
+    expect(getScenarioForModel("gpt-5.5")).toEqual(INCLUDED);
+    notePaidSeat(false);
+    process.env.M365_PAID_SEAT = "1";
+    expect(getScenarioForModel("gpt-5.5")).toEqual(PAID);
+  });
+
+  it("still lets M365_SCENARIO win", () => {
+    notePaidSeat(false);
+    process.env.M365_SCENARIO = "OfficeWebPaidCopilot";
+    expect(getScenarioForModel("gpt-5.5").scenario).toBe("OfficeWebPaidCopilot");
+  });
+
+  it("recognises the licence refusal (F46), and its text while it streams", () => {
+    expect(isLicenceRefusal({ value: "ForbiddenRequest", errorCode: "InvalidCopilotLicense" })).toBe(true);
+    expect(isLicenceRefusal({ value: "ForbiddenRequest" })).toBe(true);
+    expect(isLicenceRefusal({ value: "ForbiddenRequest", errorCode: "SomethingElse" })).toBe(false);
+    expect(isLicenceRefusal({ value: "InternalError" })).toBe(false);
+    expect(isLicenceRefusal(null)).toBe(false);
+    expect(couldBeLicenceRefusalPrefix("")).toBe(true);
+    expect(couldBeLicenceRefusalPrefix("It looks like you don\u2019t have a val")).toBe(true);
+    expect(couldBeLicenceRefusalPrefix("It looks like you don't have a valid licence. To get access")).toBe(true);
+    expect(couldBeLicenceRefusalPrefix("It looks like the file is empty")).toBe(false);
+    expect(couldBeLicenceRefusalPrefix("4")).toBe(false);
   });
 });

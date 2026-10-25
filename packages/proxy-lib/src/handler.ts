@@ -6,6 +6,11 @@ import {
   getToneForModel,
   requestUsesAgent,
   isPremiumOnlyModel,
+  prefersPaidScenario,
+  notePaidSeat,
+  isLicenceRefusal,
+  couldBeLicenceRefusalPrefix,
+  usesPaidScenario,
   noteAgentRouteDead,
   noteAgentRouteAlive,
   isAgentRouteAlive,
@@ -405,7 +410,7 @@ export async function handleChatCompletion(
   // GPT-6 and GPT-6 Sol tones get a user-voice relay (Sonnet reads the
   // `<system>`-tagged baseline as an injected prompt; on Opus it trips the
   // jailbreak classifier). Opus, Sonnet 4.6, GPT-6, GPT-6 Sol and GPT-6.1 Sol get the
-  // turn-saving `relay_batch` (§24 F60, §25, §27, §28); Sonnet 5 and Sonnet 5.5 plain `relay`. So
+  // turn-saving `relay_batch` (§24 F60, §25, §27, §28), and so does Sonnet 5.5 (§42); Sonnet 5 plain `relay`. So
   // do the GPT-5.x tones and `magic` since the classifier started tripping on `<system>`-tagged
   // framings (§40, §41). The rest keep the bench-tuned `baseline`.
   // Keyed on the model, not the tone, because one tone can serve two models.
@@ -486,6 +491,7 @@ export async function handleChatCompletion(
     let disengageRetried = false;
     let agentFallbackDone = false;
     let priorityFallbackDone = false;
+    let licenceFallbackDone = false;
     let internalErrorFreshRetried = false;
     let originalText = text;
     // Self-imposed pacing while the account is degraded (thread-rate throttle). A
@@ -663,7 +669,35 @@ export async function handleChatCompletion(
         return { error: priorityAccessResponse(exhausted, model) };
       }
 
+      // The paid scenario on an account without a paid seat (F46): a canned
+      // licence apology, `ForbiddenRequest` / `InvalidCopilotLicense`. It has
+      // text, so it would otherwise go to the client as an answer. A model the
+      // included scenario serves too (prefersPaidScenario) is re-sent there in a
+      // fresh conversation, and the process stops trying the paid one (docs
+      // §41); a model only the paid scenario serves gets a clear error.
+      const paidTurn = usesPaidScenario(model);
+      if (isLicenceRefusal(copilotStream.result)) {
+        if (paidTurn) notePaidSeat(false);
+        // Only when the re-send would really leave the paid scenario: not under
+        // M365_SCENARIO, nor M365_PAID_SEAT=1.
+        if (!licenceFallbackDone && paidTurn && prefersPaidScenario(model) && !usesPaidScenario(model)) {
+          licenceFallbackDone = true;
+          session.newConversation();
+          // The included scenario can be another model (`claude-sonnet`: Sonnet 4.6, not 5.5), with its own framing.
+          framingVariant = currentFramingVariant(defaultFramingForModel(model));
+          text = formatMessages(body.messages, body.tools, body.tool_choice, session.conversationId, framingVariant);
+          inputImages = imageUrls(body.messages);
+          originalText = text;
+          log.info(`${model}: the paid scenario needs a paid Copilot seat (InvalidCopilotLicense) — re-sending on the included scenario in a fresh conversation`);
+          attempt--;
+          continue;
+        }
+        noteRequestOutcome(false, convId); // an answer about the licence, not a throttle
+        return { error: paidSeatRequiredResponse(model) };
+      }
+
       if (copilotStream.hasContent || fullText.length > 0) {
+        if (paidTurn) notePaidSeat(true);
         noteRequestOutcome(false, convId); // clean response → degradation has lifted
         if (useToolAgent) noteAgentRouteAlive(tone); // the agent route answered on this account
         conv.servedModel = model;
@@ -1009,7 +1043,7 @@ export async function handleChatCompletion(
         if (!delta) return;
         if (gated) {
           head += delta;
-          if (couldBePriorityAccessPrefix(head)) return; // still undecided — keep buffering
+          if (couldBePriorityAccessPrefix(head) || couldBeLicenceRefusalPrefix(head)) return; // still undecided — keep buffering
           gated = false;
           delta = head; // release everything held so far, in order
         }
@@ -1117,7 +1151,7 @@ function buildUsage(
   }
   // Priority access left after this turn (paid-scenario turns only, §24 F55,
   // §26): one unit per turn, so a client can see the wall coming (issue #18).
-  // `x_m365_opus_*` for Opus 5.5, `x_m365_sonnet55_*` for Sonnet 5.5.
+  // `x_m365_opus_*` for Opus 5.5, `x_m365_sonnet55_*` for Sonnet 5.5, `x_m365_gpt61sol_*` for GPT-6.1 Sol.
   for (const [budget, { usageKey }] of Object.entries(METERED_BUDGETS)) {
     const left = meteredAllowance(metering, budget as MeteredBudget);
     if (left?.daily !== undefined) base[`x_m365_${usageKey}_daily_remaining`] = left.daily;
@@ -1222,6 +1256,16 @@ function emptyResponseResponse(throttle: { current: number; max: number } | null
     error: {
       message: `M365 Copilot returned an empty response${detail} — likely a content filter, an invalid agent/session, or a transient upstream error.`,
       type: "upstream_empty_response",
+    },
+  });
+}
+
+function paidSeatRequiredResponse(model: string): Response {
+  return jsonResponse(403, {
+    error: {
+      message: `M365 Copilot didn't serve ${model}: it is served only on the paid scenario, and this account has no paid Microsoft 365 Copilot seat (InvalidCopilotLicense).`,
+      type: "permission_error",
+      code: "paid_seat_required",
     },
   });
 }

@@ -451,8 +451,8 @@ const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
  *  (docs §21). `Claude_Sonnet` defaults to relay_batch, for Sonnet 4.6: same
  *  solves, 14% fewer turns on the bench (80/80) and 21% fewer in real pi
  *  (39/39), and every pi edit still followed a read (docs §25 F61, F62).
- *  Sonnet 5 stays on relay — see SONNET_5_DEFAULT_FRAMING — and so does
- *  Sonnet 5.5 (SONNET_5_5_DEFAULT_FRAMING).
+ *  Sonnet 5 stays on relay — see SONNET_5_DEFAULT_FRAMING; Sonnet 5.5 has
+ *  relay_batch too, benched on its own (SONNET_5_5_DEFAULT_FRAMING).
  *
  *  `Gpt_6_Reasoning` defaults to relay_batch. It used to keep `baseline` on the
  *  theory that it drives M365's GPT agent path — but it never served WITH the
@@ -532,13 +532,16 @@ export function defaultFramingForModel(model: string): string | undefined {
 // in its own sandbox instead (6/40); relay: 45/50, and 5/5 through real pi.
 // It does NOT follow Sonnet 4.6 to relay_batch: 15% fewer turns on the bench,
 // but 6% in real pi (4.90 vs 5.20 per run, 10/10 each, p = 0.47), where relay
-// already reads, fixes and checks in ~5 turns (docs §25 F63).
+// already reads, fixes and checks in ~5 turns (docs §25 F63). Retested on the
+// paid scenario: 8% fewer in real pi (4.60 vs 5.00, 10/10 each, p = 0.25; §42 F106).
 const SONNET_5_DEFAULT_FRAMING = "relay";
 
-// Sonnet 5.5 inherits Sonnet 5's `relay`, unbenched: it runs `pwd` in the same
-// remote sandbox (`/home/claude`, docs §26), which relay names as the wrong
-// machine. Whether relay_batch saves turns on its metered budget is open (§26).
-const SONNET_5_5_DEFAULT_FRAMING = "relay";
+// Sonnet 5.5 — `claude-sonnet-5.5`, and `claude-sonnet` on a premium account —
+// defaults to `relay_batch` (docs §42 F105, H26b). Its budget counts turns, like
+// Opus 5.5's, and batching cut them by 31% on the bench and 28% in real pi (3.40
+// vs 4.70 per run, 10/10 each, p < 0.001). It has Sonnet 5's `/home/claude`
+// sandbox (§26), which the user-voice note names as the wrong machine.
+const SONNET_5_5_DEFAULT_FRAMING = "relay_batch";
 
 /** How formatMessages wraps the framing block and the harness's own system
  *  messages. Historically both went in `<system>` tags. Claude Sonnet 5 reads a

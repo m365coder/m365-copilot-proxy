@@ -4401,7 +4401,7 @@ shipped before this account was flighted for the model (or its tone has a name w
 shows in its picker, then `tone-probe.mjs` + `agent-tone-probe.mjs` on both accounts. `_probe-chat.mjs`
 now returns `throttle.metering`, so any probe can watch for the keys moving.
 
-### H26b — does relay_batch save Sonnet 5.5's budget? 🔴
+### H26b — does relay_batch save Sonnet 5.5's budget? 🟢 yes, 28% of its pi turns (§42 F105)
 Its budget counts turns, which is why Opus moved to relay_batch (F60). On Sonnet 5 batching saved 15% of
 bench turns but only 6% in pi (F63). **Probe:** real pi, fix-bug + multi, relay vs relay_batch, 5 runs
 each (~60–80 of the 80 daily units — split across two days). Switch if the §25 amendment's rule passes
@@ -4925,8 +4925,8 @@ By the rules fixed before each run:
   agent (criterion 1). Its included-scenario model is Sonnet 4.6, which no model ID reaches.
 - **`Claude_Sonnet` stays agent-less.** Sonnet 4.6 passes the bench rule only on criterion 3's line
   (sandbox turns that, under relay_batch, cost no task) and fails real pi (+1 turn per run, p = 2·10⁻⁴).
-  Sonnet 5.5 gains nothing measurable but the sandbox look-arounds, and is unbenched in pi; a tone-wide
-  change would also move Sonnet 4.6. Not worth a model-level exception.
+  Sonnet 5.5 gains nothing measurable but the sandbox look-arounds, and is unbenched in pi (since benched:
+  §42); a tone-wide change would also move Sonnet 4.6. Not worth a model-level exception.
 What the agent does buy, on all three models, is no sandbox: 0 of 390 tasks and pi runs, against 59% of
 agent-less tasks over all 17 framings (non-premium, main sweep). That matters only for framings the proxy doesn't ship: under the
 user-voice ones the sandbox look-around is rare and harmless. **Open:** whether agent instructions that
@@ -5920,3 +5920,187 @@ bench, every turn on the agent path, no fallback). A tool-less request goes agen
 --model=gpt-6-sol` returned 502 after 10.4 s, three dead turns (the request, the fresh-conversation retry,
 "Please continue."), and the handler counted it as an empty response, the throttle-backoff signal. Not
 fixed yet.
+
+---
+
+## 41. Oct 24 2026 — premium accounts on the paid scenario; a framing for GPT-5.6; tool-less GPT-6 Sol
+
+Three follow-ups to §40. **Policy (maintainer):** a premium account uses `OfficeWebPaidCopilot` for every
+tone wherever it serves. The one exception is a model ID that exists to stay off a priority-access budget:
+`claude-opus-4.8` (not `claude-opus`, Opus 5.5), `claude-sonnet-4.6` (not `claude-sonnet`, which is Sonnet
+5.5 there) and the new `gpt-6.1-sol-included` (not `gpt-6.1-sol`).
+
+**H41a — the §40 framing results hold on the paid scenario.** Premium account, `M365_SCENARIO=
+OfficeWebPaidCopilot M365_LICENSE_TYPE=Premium`, every model ID §40 switched (plus `gpt-6-sol`): bench
+`relay_batch` and `baseline`, 10 tasks each, order alternating by model; then real pi under `relay_batch`
+(fix-bug + multi, 5 each). **Rule:** a model keeps `relay_batch` on the paid scenario if it solves ≥ the
+`baseline` arm on the bench and ≥ 9/10 in real pi; otherwise its paid result decides separately (and the
+framing default may have to depend on the scenario). Any `metering` key that moves marks the model as
+metered on the paid scenario: then the quota exception above applies instead.
+
+**H41b — a framing that gets `gpt-5.6` (`Gpt_5_6_Chat`) through real pi.** All 4 of its failed runs under
+`relay_batch` (§40) gave up on the first turn after a tool result, the turn that should apply the fix ("I
+can't generate a file. The bug is…"), and a follow-up turn carries only the `<tool_response>`, not the
+framing. Four variants, each on a different lever, against `relay_batch` as the control:
+- `relay_turn`: `relay_batch`, plus a user-voice note after every follow-up turn's tool results.
+- `relay_edit`: `relay_batch`, plus a first-message paragraph that a fix is a block I run, not code to show.
+- `relay_echo`: `relay_batch`, with tool results rendered in the user's voice ("my terminal printed:")
+  instead of `<tool_response>` tags.
+- `dictation`: a short user-voice framing with none of `relay_batch`'s text.
+
+**Screen:** one non-premium account (included scenario), real pi fix-bug + multi, 5 + 5 runs per variant,
+in one sweep. **Winner:** most solves, then fewest turns per run. **Pass (fixed now):** the winner, in 20
+fresh runs (fix-bug + multi, 10 each), solves ≥ 17/20 on a non-premium account and ≥ 17/20 on the
+premium account's paid scenario.
+
+**H41c — the think-deeper pi gates.** `gpt-5.3-think-deeper` and `gpt-5.5-think-deeper` move to
+`relay_batch` (maintainer's call: one default for every GPT-5.x tone; `relay_batch` never did worse);
+real pi under it, fix-bug + multi, 5 each, ≥ 9/10.
+
+**H41b screen (09:50Z Oct 24, one non-premium account, real pi, 5 + 5 runs each):** `relay_turn` 10/10 at
+3.0 turns per run, `relay_echo` 10/10 at 3.0, `relay_edit` 10/10 at 3.1, `dictation` 10/10 at 3.4, the
+`relay_batch` control 6/10 (its third sample: 22/30 pooled with §40's 16/20). Every variant fixed what the
+control fails at; the rule's winner is a tie, `relay_turn` and `relay_echo`. **So, fixed before it runs:**
+both get the 20 fresh runs (fix-bug + multi, 10 each), split over the non-premium accounts with the order
+mirrored, and each must reach ≥ 17/20. If both pass: more solves, then fewer turns per run, then
+`relay_turn` (the smaller change: `relay_batch`'s first message and transcript, plus one line per
+follow-up; `relay_echo` also changes how every tool result reads, which the fabricated-`<tool_response>`
+stop relies on, §35). The winner then needs ≥ 17/20 on the premium account's paid scenario.
+
+**H41b confirmation (10:40Z):** `relay_turn` 20/20 at 3.15 turns per run, `relay_echo` 20/20 at 3.10 (fix-bug
++ multi, 10 each, over the non-premium accounts, order mirrored). Both pass; by the rule `relay_echo` wins on
+turns (62 vs 63, i.e. a tie in practice, decided as fixed). Neither wrote an invented tool result in any of
+its 60 + 60 turns, so `relay_echo`'s risk to the §35 stop didn't show. Pooled with the screen: 30/30 each,
+against `relay_batch`'s 22/30 (Fisher p = 0.005). Next: ≥ 17/20 on the premium account's paid scenario.
+
+**H41b bench check (11:35Z):** `gpt-5.6` under `relay_echo` on the bench, included scenario: 9/10, the miss a
+turn-1 give-up on fizzbuzz ("I can't generate files…"), which `relay_echo` doesn't touch (it changes only
+follow-up turns); `relay_batch` had none in 20 tasks (p = 0.33). A second sample before shipping, fixed
+now: 10 more `relay_echo` tasks and 10 `relay_turn` on the non-premium accounts. If `relay_echo`'s pooled bench
+falls below `relay_batch`'s 20/20 at p < 0.05, it goes back to the maintainer instead of shipping.
+Second sample (11:55Z): `relay_echo` 9/10 again and `relay_turn` 9/10, each miss a turn-1 give-up
+(ec-create, "I can't generate or modify files in your project…"). `relay_turn`'s first message is
+`relay_batch`'s byte for byte, so the turn-1 give-ups are GPT-5.6 Chat's own rate today (3 in 30 bench
+tasks over the three arms), not `relay_echo`'s doing. Pooled: `relay_echo` 18/20 against `relay_batch`'s
+20/20, p = 0.49, under the bar: it stays.
+
+**H41a for `gpt-6.1-sol`, scaled to its budget (12:45Z):** its paid turns spend `GPT61Sol*` (40 a day; 67 of
+75 left this week), and the full retest (two bench arms + 10 pi runs, ~75 turns) would empty the week. So
+one `relay_batch` bench arm on the paid scenario (10 tasks, ~25 turns), as agreed when the routing was
+chosen; its framing was pi-gated on the included scenario (§27). Watch the `metering` map: it should lower
+`GPT61SolQueryDaily` by one per turn (F67).
+
+### F102 — the paid scenario agrees: `relay_batch` beats `baseline` on every model, and passes real pi 🟢 (H41a)
+
+Premium account, `M365_SCENARIO=OfficeWebPaidCopilot`, Oct 24 07:52Z–16:38Z: bench 10 tasks per framing, then
+real pi under `relay_batch` (fix-bug + multi, 5 each). No throttle, no invalid task.
+
+| model ID | relay_batch | baseline | baseline jailbreak turns | real pi |
+|---|---|---|---|---|
+| `m365-copilot` | 10/10 | 3/10 | 4 | 9/10 |
+| `gpt-5.2` | 10/10 | 8/10 | 2 | 10/10 |
+| `gpt-5.2-think-deeper` | 10/10 | 5/10 | 5 | 10/10 |
+| `gpt-5.3` | 9/10 | 8/10 | 1 | 10/10 |
+| `gpt-5.3-think-deeper` | 10/10 | 5/10 | 5 | 10/10 |
+| `gpt-5.4-quick` | 10/10 | 6/10 | 4 | 10/10 |
+| `gpt-5.4` | 10/10 | 5/10 | 4 | 9/10 |
+| `gpt-5.5` | 10/10 | 6/10 | 3 | 10/10 |
+| `gpt-5.5-think-deeper` | 10/10 | 7/10 | 3 | 10/10 |
+| `gpt-5.6` | 10/10 | 2/10 | 2 | (H41b) |
+| `gpt-5.6-think-deeper` | 10/10 | 6/10 | 3 | 10/10 |
+| `claude-sonnet-think-deeper` (agent-less) | 9/10 | 0/10 | 4 | 10/10 |
+| `gpt-6-sol` (agent) | 19/20 (H40e) | 3/10 | 2 | 10/10 |
+
+- Every row passes H41a's rule: `relay_batch` ≥ `baseline` on the bench (by 1 to 9 solves) and ≥ 9/10 in real
+  pi. 0 jailbreak turns in the 120 `relay_batch` tasks; `baseline` drew 1–5 per 10. So the defaults don't depend
+  on the scenario, and a premium account routing everything paid changes no framing.
+- **Nothing is metered here.** 895 frames carried the whole `metering` map and no key moved between 07:52Z and
+  16:38Z: none of these models spends a budget on the paid scenario. Only `gpt-6.1-sol` (F67) and the Claude
+  models with quotas do.
+- `claude-sonnet-think-deeper` on the paid scenario refused `find-needle` (it solved it on the included one, n=1
+  each); under `baseline` it worked in `/mnt/data` (6 sandbox turns), as on the included scenario.
+
+### F103 — `relay_echo` gets GPT-5.6 Chat through real pi on both scenarios 🟢 (H41b)
+
+On the turn after a tool result GPT-5.6 Chat gave up under `relay_batch` ("I can't generate a file. The bug
+is…", 8 of 30 runs over §40 and §41). Every variant that changed what that turn carries fixed it (screen 10/10
+each), and the rule's winner, `relay_echo`, passed both confirmations: **20/20** on the non-premium accounts and
+**19/20** on the premium account's paid scenario (Oct 24 17:00–17:51Z; bench 10/10). The one miss was the
+connection, not the model: the turn's WebSocket took 78 s to connect, M365 sent nothing, and pi's request was
+aborted after 3.4 min; the rule keeps a plain client timeout as a failure. Pooled real pi under `relay_echo`
+59/60 (screen, both confirmations, and the shipped-code run in F104), against `relay_batch`'s 22/30 (p < 0.001). On the bench it is 28/30 (two turn-1 give-ups, the tone's own
+rate; `relay_turn`, which sends `relay_batch`'s first message byte for byte, gave up on turn 1 too). No run
+under it wrote an invented tool result. **Shipped:** `gpt-5.6` / `gpt-5.6-quick` default to `relay_echo`. The
+other three candidates stay selectable: `relay_turn`'s per-turn note and `relay_echo`'s user-voice results
+(`TranscriptStyle.turnNote`, `.toolResults`) are the levers for any tone that drops its framing after turn 1.
+
+### F104 — the think-deeper gates, GPT-6.1 Sol on the paid scenario, and the shipped code end to end 🟢 (H41c)
+
+- `gpt-5.3-think-deeper` and `gpt-5.5-think-deeper` under `relay_batch`: real pi 10/10 each on a non-premium
+  account and 10/10 each on the premium account's paid scenario (F102). Both moved, so every GPT-5.x tone has a
+  user-voice default.
+- `gpt-6.1-sol` on the paid scenario, with the agent: `relay_batch` 10/10 on the bench. Its 23 turns took
+  `GPT61SolQueryDaily` from 39 to 17 and `GPT61SolQueryWeekly` from 66 to 44, one each per turn (F67): the
+  budget the proxy now tracks.
+- **The code as shipped, no overrides** (non-premium account, real pi): `gpt-5.5`, `gpt-6-sol` and
+  `claude-sonnet` 3/3 each, then `gpt-5.6` 10/10, `think-deeper` 5/5 and `gpt-5.3-think-deeper` 5/5. Every
+  process spent one licence-refused paid turn and then stayed on the included scenario; `claude-sonnet`'s first
+  prompt went out as Sonnet 5.5's `relay` and the re-send as Sonnet 4.6's `relay_batch`, as designed.
+
+---
+
+## 42. Oct 24 2026 — Sonnet 5.5 as `claude-sonnet`'s default on a premium account, and Sonnet 5 again
+
+Since §41 a premium account serves `claude-sonnet` as Sonnet 5.5 (`Claude_Sonnet` on the paid scenario,
+agent-less), under `SONNET_5_5_DEFAULT_FRAMING = relay`, inherited from Sonnet 5. Sonnet 5.5 was benched once
+(§30 H30e: 10/10 under both `relay` and `relay_batch`, which took 34% fewer turns), never in real pi, and H26b
+(does `relay_batch` save its budget?) is open. Sonnet 5 (`claude-sonnet-5`, unmetered) last decided on F63:
+`relay`, because batching saved 6% of turns in pi.
+
+**H42a — Sonnet 5.5.** Premium account, `MODEL=claude-sonnet` as shipped (no scenario or seat override, so
+the proxy learns the seat), bench `default` (= `relay`) and `relay_batch`, 10 tasks each; then real pi,
+fix-bug + multi, 5 runs each per framing, interleaved by framing. Its budget is 80 turns a day (reset 00:00Z),
+so the bench runs on Oct 24 and real pi after the reset, spilling into Oct 26 if the wall stops it. **Rule
+(H26b's, fixed now):** the default moves to `relay_batch` if the bench solves ≥ `relay`'s − 1, real pi solves
+≥ 9/10 and ≥ `relay`'s − 1, real-pi turns per run drop ≥ 15% (task-stratified permutation p < 0.05), and
+sandbox + Disengaged + jailbreak turns rise by ≤ 1 per 10; otherwise it stays `relay`. Whichever is the
+default must solve ≥ 9/10 in real pi. Every turn should lower `ClaudeSonnet55QueryDaily` by one.
+
+**H42b — Sonnet 5.** Same account, `MODEL=claude-sonnet-5`: bench `relay`, `relay_batch` and `baseline` (a
+fingerprint: 6/40 before, its `<system>`-tag reaction, §21), 10 tasks each; real pi fix-bug + multi, 5 runs each
+under `relay` and `relay_batch`, interleaved. Same rule as H42a.
+
+### F105 — Sonnet 5.5 batches: `relay_batch` takes 28% fewer real-pi turns at the same solves → its default 🟢 (H42a, H26b)
+
+Premium account, `claude-sonnet` as shipped (the proxy learned the paid seat on its first request: every one
+of the 140 turns went to `Claude_Sonnet` on the paid scenario, and `ClaudeSonnet55QueryDaily` fell by one per
+turn). Bench Oct 24 21:35–22:00Z, real pi Oct 25 00:02–00:31Z, confab retry off.
+
+| | bench | turns per task | real pi | turns per run | sandbox turns (bench / pi) |
+|---|---|---|---|---|---|
+| `relay` (the shipped default) | 10/10 | 3.50 | 10/10 | 4.70 (fix-bug 4,5,4,5,4; multi 5,5,5,5,5) | 8 / 1 |
+| `relay_batch` | 10/10 | 2.40 (−31%, p = 0.015) | 10/10 | 3.40 (3,3,3,4,3; 5,3,3,3,4) | 3 / 4 |
+
+H42a's rule: bench solves ✓, real pi ≥ 9/10 and ≥ `relay`'s ✓, real-pi turns −28% (task-stratified
+permutation p = 0.0006) ✓. The fourth criterion didn't say where to count; read as F61's (the bench, where it
+has always been applied) and pooled it holds, sandbox + Disengaged + jailbreak turns 8 → 3 and 9 → 7; real pi
+alone it rose 1 → 4 (runs with a sandbox look-around 1/10 → 4/10, p = 0.30), and every one of those runs solved.
+No Disengaged or jailbreak turn in any arm. The bench repeats §30's H30e (−34%, both 10/10). **Shipped:**
+`SONNET_5_5_DEFAULT_FRAMING = relay_batch`, for `claude-sonnet-5.5` and for `claude-sonnet` on a premium account.
+On an 80-turn day that is ~23 real-pi tasks instead of ~17. The last run hit the day's wall on turn 81
+(`OutOfCredits`, `ModelQuotaExhausted`) after its fix had landed, so it still solved: the 429 path works.
+
+### F106 — Sonnet 5 doesn't, again: `relay` stays 🟢 (H42b)
+
+Premium account, `claude-sonnet-5` (paid, agent-less, unmetered), Oct 24 22:00Z–00:00Z.
+
+| | bench | turns per task | real pi | turns per run |
+|---|---|---|---|---|
+| `relay` (default) | 10/10 | 3.40 | 10/10 | 5.00 |
+| `relay_batch` | 10/10 | 3.10 (−9%, p = 0.56) | 10/10 | 4.60 (−8%, p = 0.25) |
+| `baseline` | 7/10 | 2.30 | — | — |
+
+The rule's turn criterion fails, as in F63 (−6%), so Sonnet 5 stays on `relay`, which passes real pi 10/10.
+The `baseline` fingerprint moved: 7/10 against 6/40 in §21, two of its misses the classifier's canned refusal
+and one a sandbox give-up ("no `config.json` … in the uploads directory"). It still works in its sandbox
+under a `<system>`-tagged framing, but on fewer tasks than in September.

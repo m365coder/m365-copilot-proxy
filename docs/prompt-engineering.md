@@ -82,6 +82,12 @@ but "on which machine" — and our framing decides that. Conclusive (hyp §21, p
   shell…"; 10/20 vs 19/20), and Sonnet 4.6 stops batching in real pi: it reaches for pi's `edit`
   and checks in a call of its own, one turn more per run. Under the shipped user-voice framings,
   agent-less already solves 193/200, so `Claude_Sonnet` and `Claude_Sonnet_5` stay agent-less.
+- **Whether batching pays is per model, and only real pi says.** `relay_batch` (relay, plus "put as
+  much as you can into one block") cut Sonnet 4.6's pi turns 21% and Sonnet 5.5's 28% (4.70 → 3.40 per
+  run, 10/10 each, p < 0.001; its budget counts turns), so both default to it. Sonnet 5 saves 6–8% in
+  pi (twice, p ≥ 0.25) though its bench drops 9–15%: it already reads, fixes and checks in ~5 turns,
+  and keeps `relay` (hyp §25 F62–F63, §42).
+
 ## GPT-6 / GPT-6 Sol: `relay` is not just a Claude fix
 
 The relay note was written for Sonnet 5, but the two GPT-6 tones need it more. Both run
@@ -112,10 +118,10 @@ doesn't cost solves either way.
 
 Since October 2026 the `<system>`-tagged framings trip M365's jailbreak classifier on the GPT agent path:
 `baseline` and `minimal` drew 1–6 canned refusals ("Hmm…it looks like I can't chat about this") per 10
-bench tasks on every GPT-5.x tone and `magic`, and the user-voice `relay_batch` none in 330
-tasks. So every GPT-5.x tool request now goes out in user voice: `relay_batch` solved 18–20/20 per
+bench tasks on every GPT-5.x tone and `magic`, and the user-voice `relay_batch` none in 450 tasks, on both
+scenarios. So every GPT-5.x tool request now goes out in user voice: `relay_batch` solved 18–20/20 per
 model where `baseline` solved 20–85%, then 9–10/10 in real pi for every model but GPT-5.6 Chat (below;
-hyp §40 F98). **Lesson:** a framing
+hyp §40 F98, §41 F102). **Lesson:** a framing
 that worked can stop working without a word on the wire; rerun the default against a user-voice control
 whenever the classifier counts move.
 
@@ -224,14 +230,12 @@ the transcript's **tags** (`transcriptStyleForVariant`): the Claude Sonnet set n
 the harness's own system prompt becomes `<harness_system_prompt>`.
 
 **The default is model-aware** (`defaultFramingForModel`, falling back to `defaultFramingForTone`).
-`Claude_Opus` (Opus 4.8 and 5.5), `Claude_Sonnet` (as Sonnet 4.6), `Gpt_6_Reasoning`,
-`Gpt_6_Sol_Reasoning` (hyp §28), `Gpt_61_Sol_Reasoning` (GPT-6.1 Sol, hyp §27), every GPT-5.x tone
-except GPT-5.6 Chat, `magic` and `claude-sonnet-think-deeper` (hyp §40) → `relay_batch`; GPT-5.6 Chat →
-`relay_echo` (hyp §41); Sonnet 5 (`claude-sonnet-5`, its own `Claude_Sonnet_5` tone since 2026-10-06) and
-Sonnet 5.5 (`claude-sonnet-5.5`, `Claude_Sonnet` on the paid scenario, keyed on the model ID;
-inherits Sonnet 5's relay, hyp §26) → `relay` — though on the bench relay_batch cut its turns by a
-third (3.35 → 2.20, 40/40, both paths, hyp §30); real pi decides, ~90 budget units. `M365_FRAMING_*`
-still wins. Opus used to default to `minimal`, to spend less of its priority-access
+`Claude_Opus` (Opus 4.8 and 5.5), `Claude_Sonnet` (Sonnet 4.6, and Sonnet 5.5 on the paid scenario,
+which a premium account uses: hyp §42), `Gpt_6_Reasoning`, `Gpt_6_Sol_Reasoning` (hyp §28),
+`Gpt_61_Sol_Reasoning` (GPT-6.1 Sol, hyp §27), every GPT-5.x tone except GPT-5.6 Chat, `magic` and
+`claude-sonnet-think-deeper` (hyp §40, §41) → `relay_batch`; GPT-5.6 Chat → `relay_echo` (hyp §41); Sonnet
+5 (`claude-sonnet-5`, its own `Claude_Sonnet_5` tone since 2026-10-06) → `relay`. Sonnet 5.5 is keyed on
+what the request is served (`isSonnet55Model`), since one tone is two models. `M365_FRAMING_*` still wins. Opus used to default to `minimal`, to spend less of its priority-access
 budget by sending a shorter prompt; that budget counts turns, not tokens (docs/hypotheses.md §24
 F55), so it saved nothing — see the Opus section below for why relay_batch replaced it.
 

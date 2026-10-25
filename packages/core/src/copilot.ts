@@ -32,15 +32,19 @@ const MODEL_TONES: Record<string, string> = {
   "think-deeper": "Gpt_5_5_Reasoning",
 
   // Claude (real Anthropic models, confirmed via self-id) — chat + reasoning.
-  // On the included scenario `Claude_Sonnet` is now Sonnet 4.6 (it was 4.5);
-  // `claude-sonnet-4.5` stays as a legacy alias so existing configs keep working.
+  // On the included scenario `Claude_Sonnet` is now Sonnet 4.6 (it was 4.5),
+  // on the paid one Sonnet 5.5. `claude` and `claude-sonnet` follow the account:
+  // Sonnet 5.5 on a premium one, which routes every tone on the paid scenario
+  // (docs §41), Sonnet 4.6 elsewhere. `claude-sonnet-4.6` stays on Sonnet 4.6
+  // everywhere, off Sonnet 5.5's budget, the way `claude-opus-4.8` does for
+  // Opus; `claude-sonnet-4.5` is its legacy alias.
   "claude": "Claude_Sonnet",
   "claude-sonnet": "Claude_Sonnet",
   "claude-sonnet-4.5": "Claude_Sonnet",
   "claude-sonnet-4.6": "Claude_Sonnet",
   // Same tone, paid scenario: Claude Sonnet 5.5 (self-IDs "Claude Sonnet 5.5",
-  // knowledge cutoff 2026-01, since 2026-10-06). The scenario comes from
-  // PAID_SCENARIO_MODELS. Metered, like Opus 5.5 (METERED_BUDGETS).
+  // knowledge cutoff 2026-01, since 2026-10-06), on every account: the scenario
+  // comes from PAID_SCENARIO_MODELS. Metered, like Opus 5.5 (METERED_BUDGETS).
   "claude-sonnet-5.5": "Claude_Sonnet",
   // Sonnet 5 moved to a tone of its own when Sonnet 5.5 took over the paid
   // scenario of `Claude_Sonnet`: `Claude_Sonnet_5` is Sonnet 5 on the paid
@@ -129,6 +133,10 @@ const MODEL_TONES: Record<string, string> = {
   // separator between 6 and 1, and every
   // sibling (`Gpt_61_Sol`, `Gpt_61_Sol_Chat`, `Gpt_61_Reasoning`, …) is rejected.
   "gpt-6.1-sol": "Gpt_61_Sol_Reasoning",
+  // The same tone pinned to the included scenario, which spends no budget: what
+  // M365_GPT61_SOL_FALLBACK_MODEL names, the way claude-opus-4.8 is Opus 5.5's
+  // fallback. On a premium account `gpt-6.1-sol` itself goes paid (docs §41).
+  "gpt-6.1-sol-included": "Gpt_61_Sol_Reasoning",
 
   // GPT-5.4. Bare `gpt-5.4` has always been the reasoning tone (unlike its
   // siblings); only the `-quick` alias moved, from the retired `Gpt_5_4_Quick`.
@@ -227,8 +235,8 @@ export const PAID_SCENARIO_TONES: ReadonlySet<string> = new Set([
  *
  * `Claude_Sonnet` is one tone and two models: Sonnet 4.6 on the included
  * scenario, Sonnet 5.5 on the paid one. PAID_SCENARIO_TONES can't express that
- * (it would drag `claude-sonnet` onto Sonnet 5.5 too), so the choice lives on
- * the model ID. Unmapped strings a client may send for the same model
+ * (it would send `claude-sonnet` to the paid scenario on accounts without a paid
+ * seat too), so the choice lives on the model ID. Unmapped strings a client may send for the same model
  * (`claude-sonnet-5.5[1m]`, a dated `claude-sonnet-5-5-…`) are caught by
  * SONNET_5_5_PATTERN rather than silently served by Sonnet 4.6.
  */
@@ -244,10 +252,29 @@ const SONNET_5_5_PATTERN = /sonnet[-_ ]?5[-_. ]5(?!\d)/i;
 // is some other model. Matches `sonnet-5-5` too: test SONNET_5_5_PATTERN first.
 const SONNET_5_PATTERN = /sonnet[-_ ]?5(?!\d|\.\d)/i;
 
-/** True when this model ID is Claude Sonnet 5.5, i.e. `Claude_Sonnet` + paid scenario. */
-export function isSonnet55Model(model: string): boolean {
+/** True when the ID names Sonnet 5.5 itself: paid on every account, never Sonnet 4.6. */
+function namesSonnet55(model: string): boolean {
   return PAID_SCENARIO_MODELS.has(model) ||
     (getToneForModel(model) === "Claude_Sonnet" && SONNET_5_5_PATTERN.test(model));
+}
+
+/**
+ * True when this request is served Claude Sonnet 5.5, i.e. `Claude_Sonnet` on
+ * the paid scenario: an ID that names it, or `claude-sonnet` on a premium
+ * account (docs §41).
+ */
+export function isSonnet55Model(model: string): boolean {
+  return getToneForModel(model) === "Claude_Sonnet" && usesPaidScenario(model);
+}
+
+// The IDs that keep `Claude_Sonnet` on Sonnet 4.6, off Sonnet 5.5's budget, on
+// every account: `claude-sonnet-4.6`, the legacy `claude-sonnet-4.5`, and the
+// strings a client may send for them (`claude-sonnet-4-6-…`, `sonnet_4.5`).
+const INCLUDED_SONNET_PATTERN = /sonnet[-_ ]?4[-_. ][56](?!\d)/i;
+
+/** True when this ID asks for the included scenario's Sonnet (Sonnet 4.6). */
+export function isIncludedSonnetModel(model: string): boolean {
+  return getToneForModel(model) === "Claude_Sonnet" && INCLUDED_SONNET_PATTERN.test(model);
 }
 
 /** True when this model ID is Claude Sonnet 5, i.e. the `Claude_Sonnet_5` tone. */
@@ -465,15 +492,91 @@ export function getScenarioForTone(tone: string): ScenarioRouting {
 }
 
 /**
+ * Model IDs that stay on the included scenario on every account, because the
+ * paid one would spend a priority-access budget they exist to avoid. Opus 4.8
+ * is the other such ID (INCLUDED_SCENARIO_MODELS, which also marks it premium-only).
+ */
+const QUOTA_FREE_MODELS: ReadonlySet<string> = new Set([
+  "gpt-6.1-sol-included",
+]);
+
+/**
+ * Whether a premium account should request this model on the paid scenario
+ * although the included one serves it too (maintainer policy, docs §41): every
+ * tone, metered or not. A metered one has its budget's fallback for the wall
+ * (M365_SONNET_FALLBACK_MODEL for `claude-sonnet`, which is Sonnet 5.5 there;
+ * M365_GPT61_SOL_FALLBACK_MODEL for `gpt-6.1-sol`). Not the IDs that exist to
+ * stay off a budget: `claude-opus-4.8`, `claude-sonnet-4.6`, `gpt-6.1-sol-included`.
+ */
+export function prefersPaidScenario(model: string): boolean {
+  if (isIncludedOpusModel(model) || isIncludedSonnetModel(model) || QUOTA_FREE_MODELS.has(model)) return false;
+  // Paid on every account already: never fall back to a different model.
+  return !PAID_SCENARIO_TONES.has(getToneForModel(model)) && !namesSonnet55(model);
+}
+
+// Whether this account holds a paid Copilot seat. Nothing on the token says
+// (§23 F49), so the first request that prefers the paid scenario tries it: a
+// non-premium account answers `ForbiddenRequest` / `InvalidCopilotLicense`
+// (F46), and from then on the process routes those models on the included
+// scenario. One process serves one account. `M365_PAID_SEAT=1` / `=0` says so
+// up front instead.
+let paidSeat: boolean | undefined;
+
+/** What this process knows about the account's seat: true, false, or undefined (not yet known). */
+export function hasPaidSeat(): boolean | undefined {
+  const env = process.env.M365_PAID_SEAT;
+  if (env === "1") return true;
+  if (env === "0") return false;
+  return paidSeat;
+}
+
+/** Record whether the account holds a paid seat (a paid turn answered, or was refused for the licence). */
+export function notePaidSeat(has: boolean): void {
+  paidSeat = has;
+}
+
+/** Forget it. For tests. */
+export function resetPaidSeat(): void {
+  paidSeat = undefined;
+}
+
+/** The licence refusal a non-premium account gets on the paid scenario (F46). */
+export function isLicenceRefusal(result: { value: string; errorCode?: string } | null | undefined): boolean {
+  return result?.value === "ForbiddenRequest" && (result.errorCode === undefined || result.errorCode === "InvalidCopilotLicense");
+}
+
+// The refusal's text: "It looks like you don't have a valid licence. To get
+// access, please check with your administrator…" (F46).
+const LICENCE_REFUSAL_HEAD = "it looks like you don't have a valid licen";
+
+/**
+ * Could `text` still be the head of the licence refusal? A streamed tool-less
+ * answer is held back while it might be, like a priority-access refusal, so
+ * the client never sees it before the re-send that replaces it.
+ */
+export function couldBeLicenceRefusalPrefix(text: string): boolean {
+  const t = text.replace(/[\u2018\u2019]/g, "'").trimStart().toLowerCase().slice(0, LICENCE_REFUSAL_HEAD.length);
+  return LICENCE_REFUSAL_HEAD.startsWith(t);
+}
+
+/**
  * The scenario a MODEL ID must be requested under: paid when its tone is
  * entitlement-gated (Opus, Sonnet 5, GPT-6) or when the ID itself selects the
  * paid model behind a shared tone (Sonnet 5.5); included when the ID selects
- * the included model behind a paid tone (Opus 4.8). This is what session.ts
- * routes on.
+ * the included model of a tone to stay off a budget (Opus 4.8, Sonnet 4.6,
+ * `gpt-6.1-sol-included`); and for everything else, paid on a premium account
+ * and included on any other (prefersPaidScenario, hasPaidSeat; docs §41).
+ * This is what session.ts routes on.
  */
 export function getScenarioForModel(model: string): ScenarioRouting {
-  if (isIncludedOpusModel(model)) return routing(false);
-  return routing(PAID_SCENARIO_TONES.has(getToneForModel(model)) || isSonnet55Model(model));
+  if (isIncludedOpusModel(model) || isIncludedSonnetModel(model) || QUOTA_FREE_MODELS.has(model)) return routing(false);
+  if (PAID_SCENARIO_TONES.has(getToneForModel(model)) || namesSonnet55(model)) return routing(true);
+  return routing(prefersPaidScenario(model) && hasPaidSeat() !== false);
+}
+
+/** Whether this model's next turn goes out on the paid scenario. */
+export function usesPaidScenario(model: string): boolean {
+  return getScenarioForModel(model).scenario === PAID_SCENARIO;
 }
 
 /**
@@ -483,10 +586,11 @@ export function getScenarioForModel(model: string): ScenarioRouting {
  * Follows the scenario the request will really use, `M365_SCENARIO` included.
  */
 export function meteredBudgetOf(model: string): MeteredBudget | null {
-  if (getScenarioForModel(model).scenario !== PAID_SCENARIO) return null;
+  if (!usesPaidScenario(model)) return null;
   const tone = getToneForModel(model);
   if (tone === "Claude_Opus") return "opus";
   if (tone === "Claude_Sonnet") return "sonnet-5.5";
+  if (tone === "Gpt_61_Sol_Reasoning") return "gpt-6.1-sol";
   return null;
 }
 
@@ -494,13 +598,15 @@ export function meteredBudgetOf(model: string): MeteredBudget | null {
 export const PRIORITY_ACCESS_FALLBACK_ENV: Readonly<Record<MeteredBudget, string>> = {
   opus: "M365_OPUS_FALLBACK_MODEL",
   "sonnet-5.5": "M365_SONNET_FALLBACK_MODEL",
+  "gpt-6.1-sol": "M365_GPT61_SOL_FALLBACK_MODEL",
 };
 
 /**
  * The model to serve a metered request with once its priority-access budget is
  * used up, instead of a 429: `M365_OPUS_FALLBACK_MODEL` for Opus 5.5 (typically
  * `claude-opus-4.8`), `M365_SONNET_FALLBACK_MODEL` for Sonnet 5.5 (typically
- * `claude-sonnet-5`). Opt-in, because it swaps the model: the response's
+ * `claude-sonnet-5`), `M365_GPT61_SOL_FALLBACK_MODEL` for GPT-6.1 Sol on the paid
+ * scenario (`gpt-6.1-sol-included`). Opt-in, because it swaps the model: the response's
  * `model` field then names the one that answered. Ignored when it names a
  * metered model itself.
  */

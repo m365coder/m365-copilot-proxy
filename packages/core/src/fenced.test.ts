@@ -17,6 +17,7 @@ import {
   transcriptStyleForVariant,
 } from "./fenced.js";
 import type { ToolDef } from "./tools.js";
+import { notePaidSeat, resetPaidSeat } from "./copilot.js";
 
 const bash: ToolDef = {
   type: "function",
@@ -735,15 +736,30 @@ describe("defaultFramingForModel", () => {
     }
   });
 
-  it("gives Sonnet 5.5 relay, not its tone's relay_batch — it has Sonnet 5's sandbox (§26)", () => {
+  it("gives Sonnet 5.5 relay_batch — its turn-counted budget (§42 F105: −28% turns in real pi)", () => {
     for (const id of ["claude-sonnet-5.5", "claude-sonnet-5-5-20261001"]) {
-      expect(defaultFramingForModel(id)).toBe("relay");
+      expect(defaultFramingForModel(id)).toBe("relay_batch");
     }
   });
 
-  it("gives Sonnet 4.6 relay_batch — and every unmapped claude-* string that lands on its tone", () => {
-    for (const id of ["claude-sonnet", "claude-sonnet-4.6", "claude-sonnet-4.5", "claude", "claude-haiku-9"]) {
+  it("gives Sonnet 4.6 relay_batch: claude-sonnet-4.6 everywhere, and every claude-* string on its tone without a paid seat", () => {
+    for (const id of ["claude-sonnet-4.6", "claude-sonnet-4.5", "claude-sonnet-4-6-20260101"]) {
       expect(defaultFramingForModel(id)).toBe("relay_batch");
+    }
+    notePaidSeat(false);
+    try {
+      for (const id of ["claude-sonnet", "claude", "claude-haiku-9"]) expect(defaultFramingForModel(id)).toBe("relay_batch");
+    } finally {
+      resetPaidSeat();
+    }
+  });
+
+  it("gives claude-sonnet Sonnet 5.5's relay_batch where it is Sonnet 5.5: a premium account (docs §41, §42)", () => {
+    notePaidSeat(true);
+    try {
+      for (const id of ["claude-sonnet", "claude"]) expect(defaultFramingForModel(id)).toBe("relay_batch");
+    } finally {
+      resetPaidSeat();
     }
   });
 

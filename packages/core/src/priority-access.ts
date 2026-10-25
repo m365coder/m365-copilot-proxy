@@ -125,7 +125,7 @@ export function secondsUntilReset(
 // turns carry no `metering` (Opus 4.8 and Sonnet 4.6 aren't metered).
 
 /** A separately metered model's priority-access budget. */
-export type MeteredBudget = "opus" | "sonnet-5.5";
+export type MeteredBudget = "opus" | "sonnet-5.5" | "gpt-6.1-sol";
 
 /**
  * Where each budget sits in `throttling.metering`, and what to call it.
@@ -133,10 +133,14 @@ export type MeteredBudget = "opus" | "sonnet-5.5";
  *   reset) and `ClaudeOpusQueryDaily` the daily one (40) (§24 F55).
  * - Sonnet 5.5: `ClaudeSonnet55QueryDaily` (80) and `ClaudeSonnet55QueryWeekly`
  *   (150), read 79/149 after the first turn (§26). Sonnet 5 lowers neither.
+ * - GPT-6.1 Sol on the paid scenario: `GPT61SolQueryDaily` (40) and
+ *   `GPT61SolQueryWeekly` (75), one each per turn (§27 F67). GPT-6 Sol's paid
+ *   turns carry the same keys and lower neither (§40 F100).
  */
 export const METERED_BUDGETS: Readonly<Record<MeteredBudget, { label: string; usageKey: string; daily: string; weekly: string }>> = {
   opus: { label: "Opus", usageKey: "opus", daily: "ClaudeOpusQueryDaily", weekly: "ClaudeOpusQuery75" },
   "sonnet-5.5": { label: "Sonnet 5.5", usageKey: "sonnet55", daily: "ClaudeSonnet55QueryDaily", weekly: "ClaudeSonnet55QueryWeekly" },
+  "gpt-6.1-sol": { label: "GPT-6.1 Sol", usageKey: "gpt61sol", daily: "GPT61SolQueryDaily", weekly: "GPT61SolQueryWeekly" },
 };
 
 /** `throttling.metering` as `{budget: remainingAllowance}`; null when absent or empty. */
