@@ -20,7 +20,10 @@ import {
   isSonnet5Model,
   isSonnet55Model,
   isAgentRouteAlive,
+  isAgentlessRouteAlive,
   isPremiumOnlyModel,
+  noteAgentlessRouteAlive,
+  noteAgentlessRouteDead,
   noteAgentRouteAlive,
   noteAgentRouteDead,
   PAID_SCENARIO_TONES,
@@ -571,5 +574,36 @@ describe("premium accounts on the paid scenario (docs §41)", () => {
     expect(couldBeLicenceRefusalPrefix("It looks like you don't have a valid licence. To get access")).toBe(true);
     expect(couldBeLicenceRefusalPrefix("It looks like the file is empty")).toBe(false);
     expect(couldBeLicenceRefusalPrefix("4")).toBe(false);
+  });
+});
+
+describe("tool-less requests on a tone whose agent-less route is dead (docs §40 F101)", () => {
+  afterEach(() => {
+    resetAgentRoutes();
+    delete process.env.M365_FORCE_AGENT;
+  });
+
+  it("go agent-less until that's learned, then carry the agent", () => {
+    expect(requestUsesAgent("gpt-6-sol", false)).toBe(false);
+    expect(noteAgentlessRouteDead("Gpt_6_Sol_Reasoning")).toBe(true);
+    expect(requestUsesAgent("gpt-6-sol", false)).toBe(true);
+    expect(requestUsesAgent("gpt-6-sol", true)).toBe(true);
+    expect(requestUsesAgent("gpt-6.1-sol", false)).toBe(false); // per tone
+  });
+
+  it("don't, when the agent route is dead too, or under M365_FORCE_AGENT=0", () => {
+    noteAgentlessRouteDead("Gpt_6_Sol_Reasoning");
+    process.env.M365_FORCE_AGENT = "0";
+    expect(requestUsesAgent("gpt-6-sol", false)).toBe(false);
+    delete process.env.M365_FORCE_AGENT;
+    noteAgentRouteDead("Gpt_6_Sol_Reasoning");
+    expect(requestUsesAgent("gpt-6-sol", false)).toBe(false);
+  });
+
+  it("isn't learned once agent-less has answered for that tone", () => {
+    noteAgentlessRouteAlive("Gpt_6_Sol_Reasoning");
+    expect(isAgentlessRouteAlive("Gpt_6_Sol_Reasoning")).toBe(true);
+    expect(noteAgentlessRouteDead("Gpt_6_Sol_Reasoning")).toBe(false);
+    expect(requestUsesAgent("gpt-6-sol", false)).toBe(false);
   });
 });

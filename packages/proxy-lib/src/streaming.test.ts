@@ -701,6 +701,74 @@ describe("GPT-6 Sol: agent on premium, learned fallback on non-premium (#23)", (
   });
 });
 
+describe("GPT-6 Sol tool-less on a non-premium account: agent-less dead, agent alive (docs §40 F101)", () => {
+  const DEAD = { fullText: "", result: { value: "InternalError" } };
+  const ANSWER = { fullText: "4" };
+
+  async function ask(model = "gpt-6-sol") {
+    scripted.result = null;
+    scripted.texts = [];
+    scripted.agentFlags = [];
+    scripted.newConversations = 0;
+    const body = ChatCompletionRequest.parse({
+      model, stream: false, messages: [{ role: "user", content: `what is 2+2? ${Math.random()}` }],
+    });
+    return respond(body);
+  }
+
+  afterEach(() => {
+    resetAgentRoutes();
+    scripted.queue = [];
+    delete process.env.M365_FORCE_AGENT;
+  });
+
+  it("re-sends the request with the agent in a fresh conversation", async () => {
+    scripted.queue = [DEAD, ANSWER];
+    const res = await ask();
+    expect(res.status).toBe(200);
+    expect((await res.json()).choices[0].message.content).toBe("4");
+    expect(scripted.agentFlags).toEqual([false, true]);
+    expect(scripted.newConversations).toBe(1);
+    expect(scripted.texts[1]).toContain("what is 2+2?");
+  });
+
+  it("remembers it once the agent has answered: the next tool-less request carries the agent", async () => {
+    scripted.queue = [DEAD, ANSWER];
+    await ask();
+    scripted.queue = [ANSWER];
+    await ask();
+    expect(scripted.agentFlags).toEqual([true]);
+    expect(scripted.newConversations).toBe(0);
+  });
+
+  it("learns nothing when the agent fails too", async () => {
+    scripted.queue = [DEAD, DEAD, DEAD, DEAD];
+    expect((await ask()).status).toBe(502);
+    expect(scripted.agentFlags[1]).toBe(true);
+    scripted.queue = [ANSWER];
+    await ask();
+    expect(scripted.agentFlags).toEqual([false]);
+  });
+
+  it("treats InternalError as a transient once agent-less has answered (premium)", async () => {
+    scripted.queue = [ANSWER];
+    await ask();
+    scripted.queue = [DEAD, ANSWER];
+    expect((await ask()).status).toBe(200);
+    expect(scripted.agentFlags).toEqual([false, false]);
+  });
+
+  it("doesn't touch tones outside PREMIUM_ONLY_AGENT_TONES, or M365_FORCE_AGENT=0", async () => {
+    scripted.queue = [DEAD, ANSWER];
+    await ask("gpt-5.5");
+    expect(scripted.agentFlags).toEqual([false, false]);
+    process.env.M365_FORCE_AGENT = "0";
+    scripted.queue = [DEAD, ANSWER];
+    await ask();
+    expect(scripted.agentFlags).toEqual([false, false]);
+  });
+});
+
 describe("follow-up turns and give-ups (Windows / pi, measured)", () => {
   const tools = [{ type: "function", function: { name: "bash", parameters: { type: "object", properties: { command: { type: "string" } } } } }];
 

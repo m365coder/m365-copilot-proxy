@@ -6046,6 +6046,9 @@ other three candidates stay selectable: `relay_turn`'s per-turn note and `relay_
   `claude-sonnet` 3/3 each, then `gpt-5.6` 10/10, `think-deeper` 5/5 and `gpt-5.3-think-deeper` 5/5. Every
   process spent one licence-refused paid turn and then stayed on the included scenario; `claude-sonnet`'s first
   prompt went out as Sonnet 5.5's `relay` and the re-send as Sonnet 4.6's `relay_batch`, as designed.
+- **F101's fix, live** (non-premium account): a tool-less `gpt-6-sol` request went paid (licence refusal) →
+  included agent-less (dead route) → included with the agent, and answered (23 s; before the fix, a 502 after
+  three dead turns).
 
 ---
 

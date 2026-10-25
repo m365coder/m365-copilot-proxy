@@ -14,6 +14,10 @@ import {
   noteAgentRouteDead,
   noteAgentRouteAlive,
   isAgentRouteAlive,
+  noteAgentlessRouteDead,
+  noteAgentlessRouteAlive,
+  isAgentlessRouteAlive,
+  toneUsesToolAgent,
   PREMIUM_ONLY_AGENT_TONES,
   defaultFramingForModel,
   currentFramingVariant,
@@ -490,6 +494,7 @@ export async function handleChatCompletion(
     let agentRefreshed = false;
     let disengageRetried = false;
     let agentFallbackDone = false;
+    let agentlessFallbackDone = false;
     let priorityFallbackDone = false;
     let licenceFallbackDone = false;
     let internalErrorFreshRetried = false;
@@ -616,7 +621,7 @@ export async function handleChatCompletion(
       // InternalError falls through to the ordinary empty-reply handling below
       // instead (isAgentRouteAlive).
       if (
-        useToolAgent && !agentFallbackDone &&
+        useToolAgent && !agentFallbackDone && !agentlessFallbackDone &&
         PREMIUM_ONLY_AGENT_TONES.has(tone) &&
         !isAgentRouteAlive(tone) &&
         process.env.M365_FORCE_AGENT !== "1" &&
@@ -631,6 +636,33 @@ export async function handleChatCompletion(
         inputImages = imageUrls(body.messages);
         originalText = text;
         log.info(`Agent route dead for ${tone} (InternalError) — this account isn't premium; re-sending agent-less with '${framingVariant}' framing in a fresh conversation`);
+        attempt--;
+        continue;
+      }
+
+      // The mirror image (docs §40 F101): a TOOL-LESS request on such a tone came
+      // back as the dead route agent-less. On a non-premium account GPT-6 Sol's
+      // agent-less route is dead and its agent route answers, so re-send the
+      // whole request with the agent in a fresh conversation. The agent-less
+      // route is marked dead only once the agent has answered (below), so a
+      // one-off InternalError can't move every later tool-less request onto
+      // the agent. Not when the agent route is known dead, and never under
+      // M365_FORCE_AGENT=0.
+      if (
+        !useToolAgent && !hasTools && !agentlessFallbackDone &&
+        PREMIUM_ONLY_AGENT_TONES.has(tone) &&
+        !isAgentlessRouteAlive(tone) && toneUsesToolAgent(tone) &&
+        process.env.M365_FORCE_AGENT !== "0" &&
+        copilotStream.result?.value === "InternalError" &&
+        !copilotStream.hasContent && fullText.length === 0
+      ) {
+        agentlessFallbackDone = true;
+        useToolAgent = true;
+        session.newConversation();
+        text = formatMessages(body.messages, body.tools, body.tool_choice, session.conversationId, framingVariant);
+        inputImages = imageUrls(body.messages);
+        originalText = text;
+        log.info(`Agent-less route dead for ${tone} (InternalError) — re-sending the tool-less request with the agent in a fresh conversation`);
         attempt--;
         continue;
       }
@@ -700,6 +732,8 @@ export async function handleChatCompletion(
         if (paidTurn) notePaidSeat(true);
         noteRequestOutcome(false, convId); // clean response → degradation has lifted
         if (useToolAgent) noteAgentRouteAlive(tone); // the agent route answered on this account
+        else noteAgentlessRouteAlive(tone);
+        if (useToolAgent && agentlessFallbackDone) noteAgentlessRouteDead(tone); // the agent answered what agent-less didn't
         conv.servedModel = model;
         inputImages = []; // on the server now: a forcing retry in this conversation needn't resend them
         return { fullText };

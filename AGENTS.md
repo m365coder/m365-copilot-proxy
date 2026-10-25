@@ -304,8 +304,8 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   sandbox turns; the retest found 13 vs 15, so one small gap is not a reason to hold a default back
   — rerun it. See docs/hypotheses.md §23, §28.
   **Since Oct 2026 GPT-6 Sol is the reverse on a non-premium account:** agent-less is the dead route and the
-  agent answers (§40 F101). Tool requests take the agent first and work; a tool-less one still goes
-  agent-less, into the dead route. Its
+  agent answers (§40 F101). Tool requests take the agent first and work; a tool-less one learns it the
+  other way (`noteAgentlessRouteDead`: re-sent with the agent, remembered once the agent answers). Its
   `find-needle` behaviour changed on the included scenario but not the paid one (F100), so a premium
   account gets the paid scenario's (§41).
   `Gpt_61_Sol_Reasoning` (`gpt-6.1-sol`) splits the same way. Its paid scenario spends a `GPT61Sol*`

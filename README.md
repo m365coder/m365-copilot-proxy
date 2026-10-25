@@ -417,8 +417,10 @@ itself as the GPT-6 reasoning model (on a premium account, since October 2026, a
 every model (above), with the tool agent: 19/20 on the bench. On the included scenario its behaviour
 changed in October 2026 (it now refuses the bench's "find the secret code" task, which it used to
 solve), and on a non-premium account its routes flipped: with the tool agent it serves, and without it
-it returns a canned apology. Tool requests carry the agent and just work; a request without tools still
-goes agent-less, where a non-premium account gets the apology. The opposite split, agent dead and agent-less alive, is handled too
+it returns a canned apology. Tool requests carry the agent and just work. A request without tools
+goes agent-less first; when that comes back as the apology, the proxy re-sends it with the agent and,
+once the agent has answered, sends that tone's tool-less requests with it for the rest of the process.
+Your client never sees the failure. The opposite split, agent dead and agent-less alive, is handled too
 (the first tool request carries the agent, a dead route switches it off), which is GPT-6.1 Sol's on a
 non-premium account and was GPT-6 Sol's until October 2026. [Hypotheses §40 F100, F101](docs/hypotheses.md).
 
@@ -643,7 +645,7 @@ Three token scopes are acquired:
 | `M365_NO_INTERACTIVE` | Set to `1` to hard-disable any visible browser login, overriding the flag above. For systemd/CI hosts where a window must never open. |
 | `M365_INTERACTIVE_TIMEOUT_MS` | How long to wait for you to finish the interactive sign-in (default `600000`, i.e. 10 minutes). |
 | `M365_LOGIN_LOCALE` / `M365_LOGIN_TIMEZONE` | Browser locale and timezone presented during login (defaults `en-GB` / `Europe/Copenhagen`). These are part of the anti-bot-scoring fingerprint ([§11 F25](docs/hypotheses.md)) — set them to match your own machine if AAD starts treating your automated login as a bot. |
-| `M365_FORCE_AGENT` | Override which tool requests carry the Copilot Studio tool agent. `1` attaches it to every tool request (and turns off the GPT-6 Sol fallback below); `0` never attaches it. Unset, the proxy decides per model: GPT-5.x, `m365-copilot`, `gpt-6-sol` and both Opus models take it, the other Claude models and `gpt-6-think-deeper` don't, and `gpt-6.1-sol` takes it only on a premium account, which the proxy learns from the first request. On a non-premium account `0` saves `gpt-6.1-sol`'s probe turn (~3 s) per proxy start. |
+| `M365_FORCE_AGENT` | Override which tool requests carry the Copilot Studio tool agent. `1` attaches it to every tool request (and turns off the GPT-6 Sol fallback below); `0` never attaches it, to tool-less requests either. Unset, the proxy decides per model: GPT-5.x, `m365-copilot`, `gpt-6-sol` and both Opus models take it, the other Claude models and `gpt-6-think-deeper` don't, and `gpt-6.1-sol` takes it only on a premium account, which the proxy learns from the first request. A tool-less request goes without it, except on a model whose agent-less route the proxy found dead (`gpt-6-sol` on a non-premium account). On a non-premium account `0` saves `gpt-6.1-sol`'s probe turn (~3 s) per proxy start. |
 | `M365_OPUS_FALLBACK_MODEL` | Model to serve `claude-opus` (Opus 5.5) requests with once its priority-access budget is used up, instead of returning a 429 — typically `claude-opus-4.8`, which isn't metered (premium accounts only). Applies until the budget resets; the response's `model` field names the model that answered. Unset by default. |
 | `M365_SONNET_FALLBACK_MODEL` | The same for Sonnet 5.5 (`claude-sonnet-5.5`, and `claude-sonnet` on a premium account) once its priority-access budget is used up — e.g. `claude-sonnet-5` (unmetered) or `claude-sonnet-4.6` (Sonnet 4.6, any account). A fallback naming a metered model is ignored. Unset by default. |
 | `M365_GPT61_SOL_FALLBACK_MODEL` | The same for `gpt-6.1-sol` on the paid scenario (a premium account) once its GPT-6.1 Sol budget is used up — typically `gpt-6.1-sol-included`, the same model on the included scenario, unmetered. Unset by default. |

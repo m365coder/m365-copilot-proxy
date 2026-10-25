@@ -422,10 +422,39 @@ export function isAgentRouteAlive(tone: string): boolean {
   return aliveAgentRoutes.has(tone);
 }
 
+// The other way round: a tone whose AGENT-LESS route is dead on this account
+// while its agent route answers — `Gpt_6_Sol_Reasoning` on a non-premium
+// account since October 2026 (docs §40 F101). Its tool requests take the agent
+// and work, but a tool-less one went agent-less, got three dead turns and a
+// 502. Learned like the agent route: such a request is re-sent with the agent,
+// and once the agent has answered it, the tone's tool-less requests carry the
+// agent for the rest of the process.
+const deadAgentlessRoutes = new Set<string>();
+const aliveAgentlessRoutes = new Set<string>();
+
+/** Record that this account's agent-less route doesn't serve `tone`. False, and nothing recorded, once it has answered. */
+export function noteAgentlessRouteDead(tone: string): boolean {
+  if (aliveAgentlessRoutes.has(tone)) return false;
+  deadAgentlessRoutes.add(tone);
+  return true;
+}
+
+/** Record that this account's agent-less route answered for `tone`. */
+export function noteAgentlessRouteAlive(tone: string): void {
+  aliveAgentlessRoutes.add(tone);
+}
+
+/** Whether this process has seen the agent-less route answer for `tone`. */
+export function isAgentlessRouteAlive(tone: string): boolean {
+  return aliveAgentlessRoutes.has(tone);
+}
+
 /** Forget everything learned about agent routes. For tests. */
 export function resetAgentRoutes(): void {
   deadAgentRoutes.clear();
   aliveAgentRoutes.clear();
+  deadAgentlessRoutes.clear();
+  aliveAgentlessRoutes.clear();
 }
 
 /** Whether a tool request on this tone should carry the tool agent. */
@@ -449,12 +478,17 @@ export function toolRequestUsesAgent(tone: string): boolean {
 
 /**
  * The agent decision for one request of any kind. Tool requests follow
- * toolRequestUsesAgent; a tool-less request never carries it. Opus 4.5 needed
- * it even then, since the agent was its only route (docs §24); Opus 4.8, which
- * replaced it, serves agent-less too (§36).
+ * toolRequestUsesAgent. A tool-less request carries it only on a tone whose
+ * agent-less route this process found dead while its agent route answered
+ * (noteAgentlessRouteDead; GPT-6 Sol on a non-premium account, docs §40 F101),
+ * and never under M365_FORCE_AGENT=0. Opus 4.5 needed it on every request,
+ * since the agent was its only route (docs §24); Opus 4.8, which replaced it,
+ * serves agent-less too (§36).
  */
 export function requestUsesAgent(model: string, hasTools: boolean): boolean {
-  return hasTools && toolRequestUsesAgent(getToneForModel(model));
+  const tone = getToneForModel(model);
+  if (hasTools) return toolRequestUsesAgent(tone);
+  return deadAgentlessRoutes.has(tone) && !deadAgentRoutes.has(tone) && process.env.M365_FORCE_AGENT !== "0";
 }
 
 /**
