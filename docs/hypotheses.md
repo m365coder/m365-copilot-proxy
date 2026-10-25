@@ -212,7 +212,7 @@ In the real client's tone list (§12.6) next to `Claude_Sonnet`. Accepted here a
 but self-IDs as **GPT-5**. So this is a *fourth* validator outcome: not live, not rejected, not the
 BotConnection deflection, but **silently substituted** — a shape where "it replied" is maximally
 misleading. Best reading: the Fable route is gated on the **Frontier program**, and an unentitled
-account gets the house model rather than an error. Unlike Opus there is no known query parameter
+account gets a model that self-IDs as GPT-5 rather than an error. Unlike Opus there is no known query parameter
 that opens it; program membership is not a string we can send.
 
 **Therefore deliberately NOT in `MODEL_TONES`.** Advertising `fable` would ship a model ID that

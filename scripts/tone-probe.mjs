@@ -91,7 +91,8 @@ const TONES = [
   // Fable, which is the same "answers, therefore it works" trap §12.15 warns
   // about one level up: the tone resolves to *a* model, just not the named one.
   // Best current reading is that the real Fable route is gated on the Frontier
-  // program and an unentitled account is quietly served the house model. That
+  // program and an unentitled account is quietly served a model that
+  // self-identifies as GPT-5. That
   // is why Fable is deliberately NOT in MODEL_TONES — advertising it would ship
   // a model ID that lies about what answers. Probed on both entitlements to see
   // whether the paid scenario is the gate (as it is for Opus) or whether the
