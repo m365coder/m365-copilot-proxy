@@ -184,17 +184,19 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   bench (16/30 vs 7/30) and the reasoning half is a tie (26/30 vs 27/30, confab-retry off), so
   don't re-point them to 5.6 on the strength of the reasoning numbers. Those are `baseline`
   numbers; under the current defaults the chat tones are level (`gpt-5.5` 18/20 bench, 10/10 pi;
-  `gpt-5.6` 59/60 pi with `relay_echo`, §41), which is no reason to move either.
+  `gpt-5.6` 30/30 pi with `relay_echo_first`, §41, §43), which is no reason to move either.
   `scripts/tone-probe.mjs` ends with a `MAPPED:` line that flags any mapped tone that isn't LIVE.
   See docs/hypotheses.md §19.
 - **The `<system>`-tagged framings trip the JailBreak classifier on the GPT agent path (since Oct 2026).**
   `baseline` and `minimal` drew 1–6 classifier refusals per 10 tasks on every GPT-5.x tone and `magic`;
   the user-voice `relay_batch` drew none in 450 bench tasks, on both scenarios (docs §40 F98, §41 F102). Every GPT-5.x tone, `magic` and
   `Claude_Sonnet_Reasoning` default to `relay_batch` (`RELAY_BATCH_TONES`), and `Gpt_5_6_Chat` to
-  `relay_echo`: under relay_batch it gave up on the turn after a tool result (22/30 in real pi), and
-  relay_echo pastes each result back in the user's voice (59/60, both scenarios). Don't move any of them back to
-  `baseline`. A follow-up turn carries only the tool results, not the framing — `TranscriptStyle`'s
-  `turnNote` / `toolResults` are the levers for that turn (§41).
+  `relay_echo_first`: under relay_batch it gave up on the turn after a tool result (22/30 in real pi);
+  relay_echo pastes each result back in the user's voice (59/60, both scenarios), and its `_first` version
+  also asks, after the task, for one block that reads, fixes and checks (30/30, −12% turns, §43). Don't
+  move any of them back to `baseline`. A follow-up turn carries only the tool results, not the framing —
+  `TranscriptStyle`'s `turnNote` / `toolResults` are the levers for that turn (§41); `firstNote` is the one
+  for the first turn, read last, after the task (§43).
 - **A premium account routes every tone on the paid scenario; nothing on the token says which account it
   is** (docs §41). `getScenarioForModel` tries paid for every model that `prefersPaidScenario`; a
   non-premium account answers `ForbiddenRequest` / `InvalidCopilotLicense` (F46), the handler re-sends on
@@ -269,9 +271,10 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   batching saved Sonnet 5 only 6% in pi, so `SONNET_5_DEFAULT_FRAMING` keeps it on relay (F63) — the
   one place the Sonnets differ (retested in §42 F106: −8%, p = 0.25); Sonnet 5.5 (same `/home/claude`
   sandbox, §26) has its own `SONNET_5_5_DEFAULT_FRAMING`, `relay_batch`: −28% turns in real pi, which its
-  80-a-day budget counts (§42 F105). `relay_batch` is plain relay when the toolset has no shell: asked
-  for a script it couldn't run, Sonnet 4.6 claimed it had only its sandbox tools (§25 H25b) — and
-  `proxy-verify --tools` is shell-less. Don't move `Claude_Sonnet` back to a `<system>`-tagged variant, and don't wrap the note
+  80-a-day budget counts (§42 F105). `relay_batch` and the variants built on it are plain relay
+  when the toolset has no shell, with no `firstNote`: asked for a script it couldn't run, Sonnet 4.6
+  claimed it had only its sandbox tools (§25 H25b) — and `proxy-verify --tools` is shell-less. Don't
+  move `Claude_Sonnet` back to a `<system>`-tagged variant, and don't wrap the note
   in `<user>` tags either: tags are just text to it, and the variant that did (`relay_inline`,
   removed) scored 1/20 (§21 F43).
   **Read its `ChainOfThoughtSummary` frames** (`M365_DUMP_FRAMES=1`) — they say why it refused.

@@ -455,6 +455,24 @@ describe("tool-result labelling", () => {
     expect(out).toContain("Here's what your bash block printed on my machine:\n`````text\na ``` b ```` c\n`````");
   });
 
+  it("puts a first-turn note after the task, only before the first tool result, and only with a shell (docs §43)", async () => {
+    const { formatMessages } = await import("./tools.js");
+    const first = formatMessages([{ role: "user", content: "fix calc.py" }], tools, undefined, undefined, "relay_onepass_first");
+    expect(first.trimEnd().endsWith("the next block can put it right.")).toBe(true);
+    expect(first.indexOf("fix calc.py")).toBeLessThan(first.indexOf("Before you start:"));
+    const later = formatMessages([
+      { role: "user", content: "fix calc.py" },
+      { role: "assistant", tool_calls: [{ id: "c1", function: { name: "bash", arguments: '{"command":"cat calc.py"}' } }] },
+      { role: "tool", tool_call_id: "c1", content: "x" },
+    ], tools, undefined, undefined, "relay_onepass_first");
+    expect(later).not.toContain("Before you start:");
+    expect(formatMessages([{ role: "user", content: "hi" }], undefined, undefined, undefined, "relay_onepass_first")).not.toContain("Before you start:");
+    // It asks for a script: not without a shell to run one, nor under tool_choice "none".
+    const readOnly = [{ type: "function" as const, function: { name: "read", parameters: { type: "object", properties: { path: { type: "string" } } } } }];
+    expect(formatMessages([{ role: "user", content: "fix calc.py" }], readOnly, undefined, undefined, "relay_onepass_first")).not.toContain("Before you start:");
+    expect(formatMessages([{ role: "user", content: "fix calc.py" }], tools, "none", undefined, "relay_onepass_first")).not.toContain("Before you start:");
+  });
+
   it("says when the output was empty, under relay_echo", async () => {
     const { formatToolResponse } = await import("./tools.js");
     const { transcriptStyleForVariant } = await import("./fenced.js");

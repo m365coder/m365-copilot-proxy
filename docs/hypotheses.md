@@ -6107,3 +6107,111 @@ The rule's turn criterion fails, as in F63 (−6%), so Sonnet 5 stays on `relay`
 The `baseline` fingerprint moved: 7/10 against 6/40 in §21, two of its misses the classifier's canned refusal
 and one a sandbox give-up ("no `config.json` … in the uploads directory"). It still works in its sandbox
 under a `<system>`-tagged framing, but on fewer tasks than in September.
+
+---
+
+## 43. Oct 25 2026 — batched follow-up levers for GPT-5.6, and a batch framing that saves Sonnet 5 turns
+
+`relay_turn` and `relay_echo` already open with `relay_batch`'s first message ("put as much as you can into
+one block"), and GPT-5.6 Chat still spent exactly 3 turns on 58 of its 60 real-pi runs under them: read the
+files, then fix and check, then a closing sentence. A run can't go below 2 (one block, then the closing
+reply), and only does when the block that reads the files also makes the fix — one paid-scenario run did,
+printing the files and rewriting the function in one script. Both tasks say what should work (`add` should
+add; `test.py` should print OK), so the fix needn't wait for a look. Sonnet 5 spends 4–5: read, pi's `edit`
+tool, a separate `bash` run of the check, the closing sentence (F106; under `relay_batch` too).
+
+Three variants, two levers:
+- **One pass** (all three): a first-message paragraph — when the task says what should work, print the
+  files, make the change and run the check in one script, and put it right in the next block if the files
+  surprise you.
+- `relay_turn_batch` = `relay_turn` + one pass, with a turn note that asks for "everything that's left
+  (the change and the check together)" instead of "the next block".
+- `relay_echo_batch` = `relay_echo` + one pass (results still pasted back in the user's voice).
+- `relay_onepass` (for Sonnet 5) = `relay_batch` + one pass + "make each change in the same bash block as
+  the check that proves it, rather than an edit call followed by a separate run".
+
+**H43a — GPT-5.6 Chat.** Real pi, fix-bug + multi, 5 + 5 runs per arm on each non-premium account (orders
+mirrored): `relay_turn`, `relay_turn_batch`, `relay_echo`, `relay_echo_batch`; 20 runs per arm. A batch
+variant **works as well** if it solves ≥ its base − 1 of 20, and **uses fewer messages** if its turns per run
+are lower than its base's at task-stratified permutation p < 0.05. Of the batch variants that pass both,
+`gpt-5.6`'s default becomes the one with more solves, then fewer turns per run; then a 10-task bench arm and
+real pi on the premium account's paid scenario (fix-bug + multi, 5 + 5) for it, ≥ 9/10. If neither passes,
+`relay_echo` stays.
+
+**H43b — Sonnet 5.** Premium account, `claude-sonnet-5`, real pi fix-bug + multi, 5 + 5 per arm: `relay`
+(its default), `relay_onepass`, `relay_turn_batch`, `relay_echo_batch`. The default moves to the variant
+with the fewest turns per run among those that solve ≥ `relay` − 1 of 10 and use fewer turns than `relay`
+at p < 0.05, and then solve ≥ `relay` − 1 on a 10-task bench arm.
+
+**H43c — Sonnet 5.5.** H43b's winner against Sonnet 5.5's `relay_batch`, `claude-sonnet` on the premium
+account, real pi fix-bug + multi, 5 + 5 each, after the 00:00Z budget reset (80 turns a day). Switch under
+H42a's rule: solves ≥ `relay_batch` − 1, turns per run down ≥ 15% at p < 0.05.
+
+**Round 1 (Oct 25 05:57–07:30Z).** Real pi, every run solved except where noted; turns per run (each
+non-premium log's extra one-turn conversation is the licence probe, §41, and is left out):
+
+| model | framing | real pi | turns per run | vs base |
+|---|---|---|---|---|
+| GPT-5.6 Chat | `relay_turn` | 20/20 | 3.00 (every run 3) | |
+| | `relay_turn_batch` | 20/20 | 2.80 | −7%, p = 0.087 |
+| | `relay_echo` | 20/20 | 3.00 (every run 3) | |
+| | `relay_echo_batch` | 20/20 | 2.75 | −8%, p = 0.033 |
+| Sonnet 5 | `relay` | 10/10 | 4.70 | |
+| | `relay_onepass` | 10/10 | 4.10 (fix-bug 3.2, multi 5.0) | −13%, p = 0.17 |
+| | `relay_turn_batch` | 8/10 | — | |
+| | `relay_echo_batch` | 10/10 | 4.80 | +2% |
+
+By H43a's rule `relay_echo_batch` passes and `relay_turn_batch` doesn't (p ≥ 0.05); by H43b's nothing
+passes. Every saving came from fix-bug, where some runs fixed in the block that read the files; every
+multi run still took 3 turns (GPT-5.6) or 4–7 (Sonnet 5). GPT-5.6 reads first: its second block checks the
+file still holds exactly the line it saw before rewriting it. Sonnet 5 kept pi's `edit` call and a
+separate check under `relay_onepass` on multi.
+
+**Round 2, fixed before it runs.** Two levers of a different kind, each on top of round 1's batch variants:
+- **recency** (`firstNote`): the one-pass request again *after* the task, on the first turn only (a turn
+  with no tool result yet), so it is the last thing read.
+- **demo**: a worked one-pass example on unrelated files (`greet.py` / `test_greet.py`), so it can't hand
+  either task its fix.
+- and for Sonnet 5, a **batch turn note** after each tool result: everything left in one bash block, or
+  say it's done.
+
+GPT-5.6 Chat: `relay_turn_first`, `relay_turn_demo`, `relay_echo_first`, `relay_echo_demo`, 5 + 5 runs per
+arm on each non-premium account, orders mirrored; each judged against its base's round-1 runs (all 3
+turns) by H43a's rule, and the default chosen by that rule among every batch variant that passes,
+`relay_echo_batch` included. Sonnet 5: `relay` again (pooled with round 1), `relay_onepass_first`,
+`relay_onepass_turn`, `relay_onepass_demo`, 5 + 5 each, by H43b's rule.
+
+### F107 — recency does it: the one-pass request after the task cuts GPT-5.6's turns 12–17% and Sonnet 5's 35% 🟢 (H43a, H43b)
+
+Round 2 (Oct 25 07:40–09:00Z), real pi, turns per run against each base:
+
+| model | framing | real pi | turns per run | vs base |
+|---|---|---|---|---|
+| GPT-5.6 Chat (base 3.00, every run 3) | `relay_turn_first` | 19/20 | 2.50 | −17%, p = 0.0001 |
+| | `relay_turn_demo` | 20/20 | 2.75 | −8%, p = 0.032 |
+| | `relay_echo_first` | 20/20 | 2.65 | −12%, p = 0.003 |
+| | `relay_echo_demo` | 20/20 | 2.75 | −8%, p = 0.033 |
+| Sonnet 5 (`relay` 4.90, 20/20 over both rounds) | `relay_onepass_first` | 10/10 | 3.20 (fix-bug 3,3,3,3,3; multi 3,3,5,3,3) | −35%, p < 0.001 |
+| | `relay_onepass_demo` | 9/10 | 3.20 | −35%, p < 0.001 |
+| | `relay_onepass_turn` | 10/10 | 4.10 | −16%, p = 0.003 |
+
+- **The lever is where the request sits, not what it says.** The same one-pass request in the first message
+  (round 1) moved little; repeated after the task, as the last thing read on turn 1 (`firstNote`), it got
+  GPT-5.6 to fix in the block that reads the files on 16 of 20 fix-bug runs under `relay_turn_first` and
+  Sonnet 5 to read, fix and check in one block on 9 of its 10 runs, multi included. A worked example
+  (`demo`) helped less, and on Sonnet 5 one run read the harness as odd and asked for the files to be pasted.
+- GPT-5.6's multi stays at 3 turns under every variant but one run: it won't rewrite `average` unseen.
+- `relay_turn_first`'s miss was the connection again: its second turn went out at 07:54:36 and M365 never
+  answered; pi aborted the run after 4 minutes.
+- **By the rules:** GPT-5.6 Chat — every variant but `relay_turn_batch` passes H43a; the most solves, then the
+  fewest turns, is **`relay_echo_first`** (20/20, 2.65). Of the `relay_turn` family, `relay_turn_first` has the
+  fewest turns (2.50, 19/20). Sonnet 5 — **`relay_onepass_first`** (H43b's fewest turns; it ties
+  `relay_onepass_demo` at 3.20 and wins on solves, 10/10 vs 9/10). Both still need H43a's/H43b's bench arm, and
+  `relay_echo_first` real pi on the paid scenario.
+
+**Last arms (Oct 25 09:09–09:35Z, confab retry off).** GPT-5.6 Chat under `relay_echo_first`: the bench
+10/10 on each non-premium account (included scenario, agent-less), every task one block and the closing
+reply (2.0 turns per task); real pi on the premium account (paid scenario, agent route) 10/10 at 2.50 turns
+per run (fix-bug 2,2,2,2,2; multi 3,3,3,3,3). That completes H43a: **`gpt-5.6` defaults to
+`relay_echo_first`**. Sonnet 5 under `relay_onepass_first`, the bench on the premium account (paid scenario,
+agent-less): 10/10 at 2.40 turns per task against `relay`'s 3.40 (F106), 4 sandbox turns against 3.

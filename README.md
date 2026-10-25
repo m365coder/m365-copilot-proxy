@@ -313,7 +313,7 @@ without NixOS: `nix run github:cramt/m365-copilot-proxy -- 4141`.
 | `gpt-6.1-sol` | Gpt_61_Sol_Reasoning | GPT-6.1 Sol ("GPT-6.1 Sol" in the web UI). **Works on every account**, the tool agent only on a premium account. A premium account gets the paid scenario, which spends a GPT-6.1 Sol quota of its own: 40 turns a day, 75 a week (see below). Defaults to `relay_batch`: 40/40 on the bench, 30/30 driving real pi |
 | `gpt-6.1-sol-included` | Gpt_61_Sol_Reasoning (included scenario) | GPT-6.1 Sol on the included scenario on every account, so no quota: what `M365_GPT61_SOL_FALLBACK_MODEL` falls back to |
 | `gpt-5.6-think-deeper` | Gpt_5_6_Reasoning | GPT-5.6 reasoning. With its `relay_batch` default: 20/20 on the bench (`baseline` 13/20), 10/10 driving real pi |
-| `gpt-5.6` / `gpt-5.6-quick` | Gpt_5_6_Chat | GPT-5.6 fast ("GPT 5.6 Quick response" in the web UI). Defaults to a framing of its own, `relay_echo`: 59/60 driving real pi on both scenarios, where `relay_batch` gave up on 8 of 30 runs (see below) |
+| `gpt-5.6` / `gpt-5.6-quick` | Gpt_5_6_Chat | GPT-5.6 fast ("GPT 5.6 Quick response" in the web UI). Defaults to a framing of its own, `relay_echo_first`: 30/30 driving real pi on both scenarios at 2.6 turns per run, where `relay_batch` gave up on 8 of 30 runs (see below) |
 | `gpt-5.5-think-deeper` | Gpt_5_5_Reasoning | **Recommended default for agents/tool-calling**: with `relay_batch`, 20/20 on the bench and 10/10 driving real pi, on the included and the paid scenario alike |
 | `gpt-5.5` / `gpt-5.5-quick` | Gpt_5_5_Chat | GPT-5.5 fast. `relay_batch`: 18/20 on the bench (`baseline` 17/30), 10/10 driving real pi |
 | `m365-copilot` / `auto` | magic | Auto-routing. `relay_batch`: 18/20 on the bench (`baseline` 8/20), 10/10 driving real pi |
@@ -367,13 +367,15 @@ it is the chat sibling of `gpt-5.6-think-deeper`, not a reasoning tone, and it s
 as "the GPT-5 chat model" — exactly as `Gpt_5_5_Chat` does. Neither tone will tell you which
 generation is actually answering, so don't pick between them on self-report.
 
-**It gets its own framing, `relay_echo`.** Under `relay_batch`, the other GPT-5.x tones' default, it
+**It gets its own framing, `relay_echo_first`.** Under `relay_batch`, the other GPT-5.x tones' default, it
 solves the bench (20/20) but gives up in real pi: in 8 of 30 runs it read the files and then, on the
 turn that should apply the fix, answered "I can't generate a file. The bug is…" A follow-up turn carries
 nothing but the tool's output, so the framing's reminder is gone by then. `relay_echo` keeps
 `relay_batch`'s note and pastes each result back as the user would ("Here's what your bash block printed
 on my machine:"), and with it `gpt-5.6` solved **59/60** real-pi runs, on the included and the paid scenario ([hypotheses §41](docs/hypotheses.md)).
-Under the old `baseline` framing it was the weakest tone (7/30 on the bench, §19).
+Its default, `relay_echo_first`, adds one line after the task asking for one block that reads the files,
+makes the fix and runs the check: 30/30 in real pi at 2.65 turns per run instead of 3, the bench 20/20
+([§43](docs/hypotheses.md)). Under the old `baseline` framing it was the weakest tone (7/30 on the bench, §19).
 
 **No entitlement needed.** It reaches a model on the default `OfficeWebIncludedCopilot`
 scenario, so the proxy sends nothing special for it. This is newly true: until recently the

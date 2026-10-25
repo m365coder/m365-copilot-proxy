@@ -4,6 +4,7 @@ import {
   currentFramingVariant,
   deriveFencedSpec,
   findFirstToolFence,
+  findShellTool,
   formatFencedToolDefinitions,
   parseFencedToolCalls,
   renderFencedCall,
@@ -216,6 +217,14 @@ export function formatMessages(
     parts.push(style.framingTag ? `<${style.framingTag}>\n${framing}\n</${style.framingTag}>` : framing);
   }
 
+  // A variant's first-turn note goes after the task, the last thing read, and
+  // only while there's no tool result yet (docs §43). It asks for a script, so
+  // only where the framing went out with a shell to run one: without a shell,
+  // relay_batch and the variants built on it are plain relay (§25 H25b).
+  const firstTurn = !messages.some((m) => m.role === "tool");
+  const canRunScript = effectiveTools !== undefined && effectiveTools.length > 0 &&
+    toolChoice !== "none" && findShellTool(effectiveTools) !== undefined;
+
   for (const m of messages) {
     if (m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0) {
       const calls = m.tool_calls.map((tc) => {
@@ -250,6 +259,9 @@ export function formatMessages(
     } else {
       parts.push(`<${m.role}>\n${getMessageContent(m)}\n</${m.role}>`);
     }
+  }
+  if (style.firstNote && firstTurn && canRunScript && messages.some((m) => m.role === "user")) {
+    parts.push(style.firstNote);
   }
 
   return parts.join("\n\n");

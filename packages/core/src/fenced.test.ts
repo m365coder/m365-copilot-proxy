@@ -636,7 +636,7 @@ describe("defaultFramingForTone", () => {
   });
 
   it("gives GPT-5.6 Chat relay_echo: it gave up after a tool result under relay_batch (docs §41)", () => {
-    for (const id of ["gpt-5.6", "gpt-5.6-quick"]) expect(defaultFramingForModel(id)).toBe("relay_echo");
+    for (const id of ["gpt-5.6", "gpt-5.6-quick"]) expect(defaultFramingForModel(id)).toBe("relay_echo_first");
   });
 
   it("leaves every other tone on the bench-tuned baseline", () => {
@@ -726,16 +726,53 @@ describe("the GPT-5.6 Chat candidates (docs §41)", () => {
   });
 });
 
-describe("defaultFramingForModel", () => {
-  // `Claude_Sonnet` is Sonnet 4.6 on the included scenario and Sonnet 5.5 on
-  // the paid one, so the tone alone can't choose Sonnet 5.5's framing.
-  it("keeps Sonnet 5 on relay, including unmapped Sonnet 5 strings", () => {
-    // Batching saved 15% of Sonnet 5's bench turns but only 6% in real pi (§25 F63).
-    for (const id of ["claude-sonnet-5", "claude-sonnet-5[1m]"]) {
-      expect(defaultFramingForModel(id)).toBe("relay");
+describe("the batched follow-up variants (docs §43)", () => {
+  it("open with the one-pass paragraph, before the tools block", () => {
+    for (const v of ["relay_turn_batch", "relay_echo_batch", "relay_onepass"]) {
+      const out = formatFencedToolDefinitions([bash, readFile], v);
+      expect(out).toContain("your first block can do the whole job");
+      expect(out.indexOf("your first block can do the whole job")).toBeLessThan(out.indexOf("<tools>"));
+      expect(transcriptStyleForVariant(v).framingTag).toBeNull();
     }
   });
 
+  it("keep their bases' follow-up levers: a batch-minded turn note, user-voice results", () => {
+    expect(formatFencedToolDefinitions([bash, readFile], "relay_turn_batch")).toContain(formatFencedToolDefinitions([bash, readFile], "relay_turn").split("\n\n<tools>")[0]);
+    expect(transcriptStyleForVariant("relay_turn_batch").turnNote).toMatch(/everything that's left \(the change and the check together\)/);
+    expect(transcriptStyleForVariant("relay_echo_batch").toolResults).toBe("terminal");
+    expect(formatFencedToolDefinitions([bash, readFile], "relay_echo_batch")).not.toContain("<tool_response>");
+  });
+
+  it("asks Sonnet 5's relay_onepass to make the change in the check's block", () => {
+    const out = formatFencedToolDefinitions([bash, readFile], "relay_onepass");
+    expect(out).toContain("rather than an edit call followed by a separate run");
+    expect(out).toContain("put as much as you can into one block");
+  });
+
+  it("add round 2's levers: a first-turn note, a worked example on unrelated files, a batch turn note", () => {
+    for (const v of ["relay_turn_first", "relay_echo_first", "relay_onepass_first"]) {
+      expect(transcriptStyleForVariant(v).firstNote).toMatch(/don't send a block that only looks/);
+    }
+    for (const v of ["relay_turn_demo", "relay_echo_demo", "relay_onepass_demo"]) {
+      const out = formatFencedToolDefinitions([bash, readFile], v);
+      expect(out).toContain("cat greet.py test_greet.py");
+      expect(out).not.toMatch(/calc\.py|mathutil/);
+    }
+    expect(transcriptStyleForVariant("relay_onepass_turn").turnNote).toMatch(/everything that's left into one bash block/);
+    expect(transcriptStyleForVariant("relay_turn_first").turnNote).toBe(transcriptStyleForVariant("relay_turn_batch").turnNote);
+    expect(transcriptStyleForVariant("relay_echo_first").toolResults).toBe("terminal");
+  });
+
+  it("are plain relay without a shell", () => {
+    for (const v of ["relay_turn_batch", "relay_echo_batch", "relay_onepass", "relay_turn_demo", "relay_echo_demo", "relay_onepass_demo"]) {
+      expect(formatFencedToolDefinitions([readFile], v)).toBe(formatFencedToolDefinitions([readFile], "relay"));
+    }
+  });
+});
+
+describe("defaultFramingForModel", () => {
+  // `Claude_Sonnet` is Sonnet 4.6 on the included scenario and Sonnet 5.5 on
+  // the paid one, so the tone alone can't choose Sonnet 5.5's framing.
   it("gives Sonnet 5.5 relay_batch — its turn-counted budget (§42 F105: −28% turns in real pi)", () => {
     for (const id of ["claude-sonnet-5.5", "claude-sonnet-5-5-20261001"]) {
       expect(defaultFramingForModel(id)).toBe("relay_batch");

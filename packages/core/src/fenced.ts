@@ -497,16 +497,18 @@ const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
  *  against baseline's 4–15/20 (≥ 20 bench tasks per arm, Fisher p ≤ 0.047),
  *  then 10/10 in real pi. `Gpt_5_3_Reasoning` (20/20 vs 16/20, p = 0.11) and
  *  `Gpt_5_5_Reasoning` (20/20 vs 17/20, p = 0.23; `think-deeper`) moved with
- *  them: relay_batch never did worse. `Gpt_5_6_Chat` (`gpt-5.6`) got relay_echo
- *  instead (docs §41): under relay_batch it gave up on the turn after a tool
- *  result (22/30 in real pi); relay_echo, which pastes each result back in the
- *  user's voice, solved 59/60 on both scenarios (relay_turn 30/30 too, a turn
- *  per 20 runs more, on the included one).
+ *  them: relay_batch never did worse. `Gpt_5_6_Chat` (`gpt-5.6`) has
+ *  relay_echo_first (docs §41, §43): under relay_batch it gave up on the turn
+ *  after a tool result (22/30 in real pi); relay_echo, which pastes each result
+ *  back in the user's voice, solved 59/60 on both scenarios, and its one-pass
+ *  version, which asks again after the task for one block that reads, fixes and
+ *  checks, kept 20/20 at 12% fewer turns (2.65 vs 3.00 per run, p = 0.003; paid
+ *  scenario 10/10).
  *
  *  Every other tone keeps the bench-tuned `baseline` byte-for-byte. */
 export function defaultFramingForTone(tone?: string): string | undefined {
   if (tone && RELAY_BATCH_TONES.has(tone)) return "relay_batch";
-  if (tone === "Gpt_5_6_Chat") return "relay_echo";
+  if (tone === "Gpt_5_6_Chat") return "relay_echo_first";
   if (tone === "Claude_Opus") return "relay_batch";
   if (tone === "Claude_Sonnet") return "relay_batch";
   if (tone === "Claude_Sonnet_5") return SONNET_5_DEFAULT_FRAMING;
@@ -559,10 +561,19 @@ export interface TranscriptStyle {
   /** How a tool result reads: `<tool_response>` tags (the default), or pasted
    *  back in the user's voice. */
   toolResults?: "tags" | "terminal";
+  /** Sent after the task on the first turn only (no tool result yet), so it is
+   *  the last thing the model reads before its first block (docs §43). */
+  firstNote?: string;
 }
+// Round 2 of docs §43: the one-pass request as the last thing read on turn 1, a
+// worked example of it, and a batch-minded note for Sonnet 5's follow-up turns.
+const FIRST_NOTE = "Before you start: the task says what should work, so please don't send a block that only looks. Send one block that prints the files, makes the fix you expect, and runs the check. If the output shows the files weren't what you expected, the next block can put it right.";
+const ONEPASS_TURN_NOTE = "That's the output from my terminal. If the task is done and checked, tell me in a sentence; otherwise put everything that's left into one bash block, the change and the check together.";
+const TURN_BATCH_NOTE = "That's the output from my terminal. If it shows the task done and checked, just tell me in a sentence. If not, send one block with everything that's left (the change and the check together), and I'll run it.";
 const SYSTEM_STYLE: TranscriptStyle = { framingTag: "system", systemTag: "system" };
 const RETAG_STYLE: TranscriptStyle = { framingTag: "harness_instructions", systemTag: "harness_system_prompt" };
 const USER_VOICE_STYLE: TranscriptStyle = { framingTag: null, systemTag: "harness_system_prompt" };
+const TURN_BATCH_STYLE: TranscriptStyle = { ...USER_VOICE_STYLE, turnNote: TURN_BATCH_NOTE };
 const TRANSCRIPT_STYLES: Record<string, TranscriptStyle> = {
   retag: RETAG_STYLE,
   honest: USER_VOICE_STYLE,
@@ -575,6 +586,16 @@ const TRANSCRIPT_STYLES: Record<string, TranscriptStyle> = {
   },
   relay_edit: USER_VOICE_STYLE,
   relay_echo: { ...USER_VOICE_STYLE, toolResults: "terminal" },
+  relay_turn_batch: TURN_BATCH_STYLE,
+  relay_echo_batch: { ...USER_VOICE_STYLE, toolResults: "terminal" },
+  relay_onepass: USER_VOICE_STYLE,
+  relay_turn_first: { ...TURN_BATCH_STYLE, firstNote: FIRST_NOTE },
+  relay_turn_demo: TURN_BATCH_STYLE,
+  relay_echo_first: { ...USER_VOICE_STYLE, toolResults: "terminal", firstNote: FIRST_NOTE },
+  relay_echo_demo: { ...USER_VOICE_STYLE, toolResults: "terminal" },
+  relay_onepass_first: { ...USER_VOICE_STYLE, firstNote: FIRST_NOTE },
+  relay_onepass_turn: { ...USER_VOICE_STYLE, turnNote: ONEPASS_TURN_NOTE },
+  relay_onepass_demo: USER_VOICE_STYLE,
   dictation: USER_VOICE_STYLE,
 };
 export function transcriptStyleForVariant(variant: string): TranscriptStyle {
@@ -967,6 +988,49 @@ You can't touch my files yourself, and you don't need to: I run whatever block y
   relay_echo(tools) {
     return FRAMING_VARIANTS.relay_batch(tools).replace(" as a <tool_response>", "");
   },
+  // The batched versions (docs §43). A run can't go below two turns (one block,
+  // then the closing reply), and GPT-5.6 Chat spent three on nearly every run
+  // under relay_turn and relay_echo: read, then fix and check, then the reply.
+  // ONE_PASS invites the fix into the block that reads the files.
+  relay_turn_batch(tools) {
+    if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
+    return withParagraph(FRAMING_VARIANTS.relay_turn(tools), ONE_PASS);
+  },
+  relay_echo_batch(tools) {
+    if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
+    return withParagraph(FRAMING_VARIANTS.relay_echo(tools), ONE_PASS);
+  },
+  // Round 2 (docs §43): recency (TranscriptStyle.firstNote) and a worked example.
+  relay_turn_first(tools) {
+    return FRAMING_VARIANTS.relay_turn_batch(tools);
+  },
+  relay_turn_demo(tools) {
+    if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
+    return withParagraph(FRAMING_VARIANTS.relay_turn_batch(tools), ONE_PASS_DEMO);
+  },
+  relay_echo_first(tools) {
+    return FRAMING_VARIANTS.relay_echo_batch(tools);
+  },
+  relay_echo_demo(tools) {
+    if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
+    return withParagraph(FRAMING_VARIANTS.relay_echo_batch(tools), ONE_PASS_DEMO);
+  },
+  relay_onepass_first(tools) {
+    return FRAMING_VARIANTS.relay_onepass(tools);
+  },
+  relay_onepass_turn(tools) {
+    return FRAMING_VARIANTS.relay_onepass(tools);
+  },
+  relay_onepass_demo(tools) {
+    if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
+    return withParagraph(FRAMING_VARIANTS.relay_onepass(tools), ONE_PASS_DEMO);
+  },
+  // relay_onepass, for Sonnet 5, which also spends a turn on pi's edit tool and
+  // another running the check: one pass, and the change in the check's block.
+  relay_onepass(tools) {
+    if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
+    return withParagraph(FRAMING_VARIANTS.relay_batch(tools), `${ONE_PASS} ${CHANGE_WITH_CHECK}`);
+  },
   // dictation: short, and none of relay_batch's text.
   dictation(tools) {
     if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
@@ -975,6 +1039,17 @@ You can't touch my files yourself, and you don't need to: I run whatever block y
 ${toolsBlock(tools)}`;
   },
 };
+
+const ONE_PASS = "When the task already says what should work (a check that should pass, a function that should do what its name says), your first block can do the whole job: print the files, make the change and run the check, all in one script, so its output shows the code, the change and the result together. If the files turn out different from what you expected, the next block can put it right.";
+// A one-pass block on files no bench task has, so it can't hand a task its fix.
+const ONE_PASS_DEMO = "For example, if a task said greet.py should print Hello, World and test_greet.py checks it, one block could do it all:\n\n```bash\ncat greet.py test_greet.py\ncat > greet.py <<'EOF'\nprint(\"Hello, World\")\nEOF\npython3 test_greet.py\n```";
+const CHANGE_WITH_CHECK = "Make each change in the same ```bash block as the check that proves it (`sed -i`, a heredoc or a `python3` script), rather than an edit call followed by a separate run.";
+
+/** `text` with `para` as a paragraph of its own just before the `<tools>` block. */
+function withParagraph(text: string, para: string): string {
+  const i = text.lastIndexOf("\n\n<tools>");
+  return i < 0 ? `${text}\n\n${para}` : `${text.slice(0, i)}\n\n${para}${text.slice(i)}`;
+}
 
 // Names of the framing strategies under test, for tooling/bench discovery.
 export const FRAMING_VARIANT_NAMES = Object.keys(FRAMING_VARIANTS);

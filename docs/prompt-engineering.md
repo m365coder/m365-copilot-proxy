@@ -132,9 +132,15 @@ later turn carries only the tool results. Four variants that change what that tu
 (10/10 each against the control's 6/10, hyp §41 H41b): a user-voice note after each turn's results
 (`relay_turn`, `TranscriptStyle.turnNote`), the results pasted back in the user's voice instead of
 `<tool_response>` tags (`relay_echo`, `TranscriptStyle.toolResults`), a first-message paragraph that a fix
-is a block to run (`relay_edit`), and a short dictation note (`dictation`). `relay_echo` won and is
-GPT-5.6 Chat's default: 59/60 in real pi on both scenarios (F103). **Lesson:** when a model drops its
-framing mid-task, look at what the failing turn actually carries before rewording the first message.
+is a block to run (`relay_edit`), and a short dictation note (`dictation`). `relay_echo` won: 59/60 in
+real pi on both scenarios (F103). **Lesson:** when a model drops its framing mid-task, look at what the
+failing turn actually carries before rewording the first message.
+
+**And the first turn has a "last thing read" too.** The same one-pass request ("read, fix and check in one
+block") moved little in the first message and a lot when it came again after the task (`firstNote`, hyp §43
+F107): GPT-5.6 Chat's turns −12% (`relay_echo_first`, 30/30, its default now), Sonnet 5's −35%
+(`relay_onepass_first`, 10/10). **Lesson:** a request the model weighs against its own habits
+(GPT-5.6 reads before it writes) belongs at the end of the turn, not the top of the framing.
 
 ## Claude Opus: when every framing solves, count the Disengages
 
@@ -224,8 +230,9 @@ Current strategies: `baseline` (the bench-tuned default until October 2026; no m
 `fewshot`, `proof_demand`, `persona`, `react`, `negative`, `terse`, `softened`, `demo_only`,
 `session_facts`, `reply_tool` (synthetic `reply()` tool; also `M365_INJECT_REPLY_TOOL=1`), and the
 Claude Sonnet set: `retag`, `honest`, `terse_user`, `relay`, and the turn-saving `relay_batch`
-(hyp §24 F60, §25), and the follow-up-turn variants `relay_turn`, `relay_echo`, `relay_edit` and
-`dictation` (hyp §41). A variant can also change
+(hyp §24 F60, §25), the follow-up-turn variants `relay_turn`, `relay_echo`, `relay_edit` and
+`dictation` (hyp §41), and the one-pass ones (`relay_*_batch`, `relay_*_first`, `relay_*_demo`,
+`relay_onepass*`; hyp §43). A variant can also change
 the transcript's **tags** (`transcriptStyleForVariant`): the Claude Sonnet set never emits `<system>`;
 the harness's own system prompt becomes `<harness_system_prompt>`.
 
@@ -233,8 +240,8 @@ the harness's own system prompt becomes `<harness_system_prompt>`.
 `Claude_Opus` (Opus 4.8 and 5.5), `Claude_Sonnet` (Sonnet 4.6, and Sonnet 5.5 on the paid scenario,
 which a premium account uses: hyp §42), `Gpt_6_Reasoning`, `Gpt_6_Sol_Reasoning` (hyp §28),
 `Gpt_61_Sol_Reasoning` (GPT-6.1 Sol, hyp §27), every GPT-5.x tone except GPT-5.6 Chat, `magic` and
-`claude-sonnet-think-deeper` (hyp §40, §41) → `relay_batch`; GPT-5.6 Chat → `relay_echo` (hyp §41); Sonnet
-5 (`claude-sonnet-5`, its own `Claude_Sonnet_5` tone since 2026-10-06) → `relay`. Sonnet 5.5 is keyed on
+`claude-sonnet-think-deeper` (hyp §40, §41) → `relay_batch`; GPT-5.6 Chat → `relay_echo_first` (hyp §41,
+§43); Sonnet 5 (`claude-sonnet-5`, its own `Claude_Sonnet_5` tone since 2026-10-06) → `relay`. Sonnet 5.5 is keyed on
 what the request is served (`isSonnet55Model`), since one tone is two models. `M365_FRAMING_*` still wins. Opus used to default to `minimal`, to spend less of its priority-access
 budget by sending a shorter prompt; that budget counts turns, not tokens (docs/hypotheses.md §24
 F55), so it saved nothing — see the Opus section below for why relay_batch replaced it.
