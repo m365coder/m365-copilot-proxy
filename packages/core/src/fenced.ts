@@ -407,7 +407,7 @@ export function currentFramingVariant(toneDefault?: string): string {
 }
 
 // Tones that left `baseline` for `relay_batch` in October 2026 (docs §40, §41);
-// see defaultFramingForTone.
+// see defaultFramingForTone. Not `Gpt_5_6_Chat`, which has relay_echo.
 const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
   "magic",
   "Gpt_5_2_Chat",
@@ -497,13 +497,16 @@ const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
  *  against baseline's 4–15/20 (≥ 20 bench tasks per arm, Fisher p ≤ 0.047),
  *  then 10/10 in real pi. `Gpt_5_3_Reasoning` (20/20 vs 16/20, p = 0.11) and
  *  `Gpt_5_5_Reasoning` (20/20 vs 17/20, p = 0.23; `think-deeper`) moved with
- *  them: relay_batch never did worse. `Gpt_5_6_Chat` (`gpt-5.6`) stays on
- *  `baseline` for now: relay_batch beat it on the bench (20/20 vs 9/30) but
- *  missed its real-pi gate (16/20).
+ *  them: relay_batch never did worse. `Gpt_5_6_Chat` (`gpt-5.6`) got relay_echo
+ *  instead (docs §41): under relay_batch it gave up on the turn after a tool
+ *  result (22/30 in real pi); relay_echo, which pastes each result back in the
+ *  user's voice, solved 59/60 on both scenarios (relay_turn 30/30 too, a turn
+ *  per 20 runs more, on the included one).
  *
  *  Every other tone keeps the bench-tuned `baseline` byte-for-byte. */
 export function defaultFramingForTone(tone?: string): string | undefined {
   if (tone && RELAY_BATCH_TONES.has(tone)) return "relay_batch";
+  if (tone === "Gpt_5_6_Chat") return "relay_echo";
   if (tone === "Claude_Opus") return "relay_batch";
   if (tone === "Claude_Sonnet") return "relay_batch";
   if (tone === "Claude_Sonnet_5") return SONNET_5_DEFAULT_FRAMING;
@@ -547,6 +550,12 @@ export interface TranscriptStyle {
   framingTag: string | null;
   /** Tag around a harness `system` message. */
   systemTag: string;
+  /** Sent after the tool results of every follow-up turn, which otherwise
+   *  carries nothing but them: the framing goes out once, on the first turn. */
+  turnNote?: string;
+  /** How a tool result reads: `<tool_response>` tags (the default), or pasted
+   *  back in the user's voice. */
+  toolResults?: "tags" | "terminal";
 }
 const SYSTEM_STYLE: TranscriptStyle = { framingTag: "system", systemTag: "system" };
 const RETAG_STYLE: TranscriptStyle = { framingTag: "harness_instructions", systemTag: "harness_system_prompt" };
@@ -557,6 +566,13 @@ const TRANSCRIPT_STYLES: Record<string, TranscriptStyle> = {
   terse_user: USER_VOICE_STYLE,
   relay: USER_VOICE_STYLE,
   relay_batch: USER_VOICE_STYLE,
+  relay_turn: {
+    ...USER_VOICE_STYLE,
+    turnNote: "That's the output from my terminal. What's the next block? If a file needs changing, send the block that changes it and I'll run it. Once it's done and checked, just tell me in a sentence.",
+  },
+  relay_edit: USER_VOICE_STYLE,
+  relay_echo: { ...USER_VOICE_STYLE, toolResults: "terminal" },
+  dictation: USER_VOICE_STYLE,
 };
 export function transcriptStyleForVariant(variant: string): TranscriptStyle {
   return TRANSCRIPT_STYLES[variant] ?? SYSTEM_STYLE;
@@ -922,6 +938,36 @@ ${toolsBlock(tools)}`;
     return `Before the task, a note on how we'll work: I'd like you to guide me through this from my terminal. Please don't use your own sandbox tools (${BUILT_IN_SANDBOX}) — that's a separate cloud machine (${SANDBOX_PATHS}) and my project isn't on it.
 
 Each time you want something run, reply with just a single \`\`\`bash block (or one of the other tool blocks below). I'll run it in my project directory right away and paste the real output back to you as a <tool_response>. Each round trip takes me a while, so put as much as you can into one block: a script can look at the files, make the change and check the result all at once. The files the task mentions are already there. When the task is complete, tell me in a sentence instead of sending a block.
+
+${toolsBlock(tools)}`;
+  },
+
+  // GPT-5.6 Chat candidates (docs §41 H41b). Under relay_batch it gave up on
+  // the turn after a tool result, the one that should apply the fix ("I can't
+  // generate a file. The bug is…", 4 of 4 failed pi runs), and a follow-up
+  // turn carries only the tool result, never the framing. Each variant pulls a
+  // different lever on that turn.
+  // relay_turn: relay_batch, plus a note after every follow-up's tool results
+  // (TranscriptStyle.turnNote).
+  relay_turn(tools) {
+    return FRAMING_VARIANTS.relay_batch(tools);
+  },
+  // relay_edit: relay_batch, plus up front: a fix is a block for me to run.
+  relay_edit(tools) {
+    if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
+    return FRAMING_VARIANTS.relay_batch(tools).replace("The files the task mentions are already there.", `The files the task mentions are already there.
+
+You can't touch my files yourself, and you don't need to: I run whatever block you send. So once you know the fix, send the block that applies it (a \`python3 - <<'PY'\` script, \`sed -i\` or a heredoc) and checks it, rather than showing me the corrected code. Writing that block is how the change gets made.`);
+  },
+  // relay_echo: relay_batch, with each tool result pasted back in my own voice
+  // instead of a <tool_response> (TranscriptStyle.toolResults).
+  relay_echo(tools) {
+    return FRAMING_VARIANTS.relay_batch(tools).replace(" as a <tool_response>", "");
+  },
+  // dictation: short, and none of relay_batch's text.
+  dictation(tools) {
+    if (!findShellTool(tools)) return FRAMING_VARIANTS.relay(tools);
+    return `I'm at my terminal in the project directory, and I'll type in exactly what you send me. Reply with one \`\`\`bash block at a time (it can read, create and edit files, and run anything) and I'll paste back what it prints. When the task is done and checked, say so in a sentence.
 
 ${toolsBlock(tools)}`;
   },

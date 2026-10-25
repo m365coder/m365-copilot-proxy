@@ -634,9 +634,12 @@ describe("defaultFramingForTone", () => {
     }
   });
 
+  it("gives GPT-5.6 Chat relay_echo: it gave up after a tool result under relay_batch (docs §41)", () => {
+    for (const id of ["gpt-5.6", "gpt-5.6-quick"]) expect(defaultFramingForModel(id)).toBe("relay_echo");
+  });
+
   it("leaves every other tone on the bench-tuned baseline", () => {
-    // Gpt_5_6_Chat: relay_batch won the bench but missed its real-pi gate (16/20, docs §40).
-    for (const tone of ["Gpt_5_6_Chat", "Claude_Fable", "Claude_Reasoning", undefined]) {
+    for (const tone of ["Claude_Fable", "Claude_Reasoning", undefined]) {
       expect(defaultFramingForTone(tone)).toBeUndefined();
     }
   });
@@ -685,6 +688,40 @@ describe("defaultFramingForTone", () => {
     // …while keeping the two load-bearing levers: shell-routing + anti-confab.
     expect(lean).toContain("```bash");
     expect(lean).toContain("run nothing yet");
+  });
+});
+
+describe("the GPT-5.6 Chat candidates (docs §41)", () => {
+  it("keeps relay_batch's first message in relay_turn and adds a note for follow-up turns", () => {
+    expect(formatFencedToolDefinitions([bash, readFile], "relay_turn")).toBe(formatFencedToolDefinitions([bash, readFile], "relay_batch"));
+    expect(transcriptStyleForVariant("relay_turn").turnNote).toMatch(/send the block that changes it/);
+    expect(transcriptStyleForVariant("relay_batch").turnNote).toBeUndefined();
+  });
+
+  it("adds to relay_batch, in relay_edit, that a fix is a block to run", () => {
+    const out = formatFencedToolDefinitions([bash, readFile], "relay_edit");
+    expect(out).toContain("put as much as you can into one block");
+    expect(out).toContain("rather than showing me the corrected code");
+  });
+
+  it("drops the <tool_response> wording in relay_echo, which pastes results back itself", () => {
+    const out = formatFencedToolDefinitions([bash, readFile], "relay_echo");
+    expect(out).not.toContain("<tool_response>");
+    expect(out).toContain("paste the real output back to you.");
+    expect(transcriptStyleForVariant("relay_echo").toolResults).toBe("terminal");
+  });
+
+  it("shares no text with relay_batch in dictation, and is plain relay without a shell", () => {
+    const out = formatFencedToolDefinitions([bash, readFile], "dictation");
+    expect(out).toContain("I'll type in exactly what you send me");
+    expect(out).not.toContain("sandbox");
+    expect(formatFencedToolDefinitions([readFile], "dictation")).toBe(formatFencedToolDefinitions([readFile], "relay"));
+  });
+
+  it("are user-voice: no <system> wrapper", () => {
+    for (const v of ["relay_turn", "relay_edit", "relay_echo", "dictation"]) {
+      expect(transcriptStyleForVariant(v).framingTag).toBeNull();
+    }
   });
 });
 

@@ -108,16 +108,27 @@ earlier bench and pi), GPT-6 Sol on 6/20 (25/100 overall), and under `honest` 3/
 17/20. The user-voice note is what makes both solve; how literally a model takes it is per model, and
 doesn't cost solves either way.
 
-## GPT-5.x and `magic`: the `<system>` tags trip the classifier now
+## GPT-5.x and `magic`: the `<system>` tags trip the classifier now, and a framing goes out once
 
 Since October 2026 the `<system>`-tagged framings trip M365's jailbreak classifier on the GPT agent path:
 `baseline` and `minimal` drew 1–6 canned refusals ("Hmm…it looks like I can't chat about this") per 10
 bench tasks on every GPT-5.x tone and `magic`, and the user-voice `relay_batch` none in 330
 tasks. So every GPT-5.x tool request now goes out in user voice: `relay_batch` solved 18–20/20 per
-model where `baseline` solved 20–85%, then 9–10/10 in real pi for every model but GPT-5.6 Chat, which gave up mid-task
-(hyp §40 F98). **Lesson:** a framing
+model where `baseline` solved 20–85%, then 9–10/10 in real pi for every model but GPT-5.6 Chat (below;
+hyp §40 F98). **Lesson:** a framing
 that worked can stop working without a word on the wire; rerun the default against a user-voice control
 whenever the classifier counts move.
+
+**The follow-up turn is a lever of its own.** GPT-5.6 Chat solved the bench under `relay_batch` but gave up
+in real pi on 8 of 30 runs, always on the turn after the first tool result, the one that should apply the
+fix ("I can't generate a file. The bug is…"). The proxy sends the framing once, on the first turn; every
+later turn carries only the tool results. Four variants that change what that turn carries all fixed it
+(10/10 each against the control's 6/10, hyp §41 H41b): a user-voice note after each turn's results
+(`relay_turn`, `TranscriptStyle.turnNote`), the results pasted back in the user's voice instead of
+`<tool_response>` tags (`relay_echo`, `TranscriptStyle.toolResults`), a first-message paragraph that a fix
+is a block to run (`relay_edit`), and a short dictation note (`dictation`). `relay_echo` won and is
+GPT-5.6 Chat's default: 59/60 in real pi on both scenarios (F103). **Lesson:** when a model drops its
+framing mid-task, look at what the failing turn actually carries before rewording the first message.
 
 ## Claude Opus: when every framing solves, count the Disengages
 
@@ -203,22 +214,24 @@ registered in `packages/core/src/fenced.ts` (`FRAMING_VARIANTS`) and selected pe
 - `M365_FRAMING_FILE=<path>` → first line of the file names the active variant, so **one
   long-lived proxy switches strategy per request** without a restart (used by the sweep).
 
-Current strategies: `baseline` (the bench-tuned default; since October 2026 only `gpt-5.6` still ships it), `minimal`, `recency`,
+Current strategies: `baseline` (the bench-tuned default until October 2026; no mapped model ships it now), `minimal`, `recency`,
 `fewshot`, `proof_demand`, `persona`, `react`, `negative`, `terse`, `softened`, `demo_only`,
 `session_facts`, `reply_tool` (synthetic `reply()` tool; also `M365_INJECT_REPLY_TOOL=1`), and the
 Claude Sonnet set: `retag`, `honest`, `terse_user`, `relay`, and the turn-saving `relay_batch`
-(hyp §24 F60, §25). A variant can also change
+(hyp §24 F60, §25), and the follow-up-turn variants `relay_turn`, `relay_echo`, `relay_edit` and
+`dictation` (hyp §41). A variant can also change
 the transcript's **tags** (`transcriptStyleForVariant`): the Claude Sonnet set never emits `<system>`;
 the harness's own system prompt becomes `<harness_system_prompt>`.
 
 **The default is model-aware** (`defaultFramingForModel`, falling back to `defaultFramingForTone`).
 `Claude_Opus` (Opus 4.8 and 5.5), `Claude_Sonnet` (as Sonnet 4.6), `Gpt_6_Reasoning`,
 `Gpt_6_Sol_Reasoning` (hyp §28), `Gpt_61_Sol_Reasoning` (GPT-6.1 Sol, hyp §27), every GPT-5.x tone
-except GPT-5.6 Chat, `magic` and `claude-sonnet-think-deeper` (hyp §40) → `relay_batch`; Sonnet 5 (`claude-sonnet-5`, its own `Claude_Sonnet_5` tone since 2026-10-06) and
+except GPT-5.6 Chat, `magic` and `claude-sonnet-think-deeper` (hyp §40) → `relay_batch`; GPT-5.6 Chat →
+`relay_echo` (hyp §41); Sonnet 5 (`claude-sonnet-5`, its own `Claude_Sonnet_5` tone since 2026-10-06) and
 Sonnet 5.5 (`claude-sonnet-5.5`, `Claude_Sonnet` on the paid scenario, keyed on the model ID;
 inherits Sonnet 5's relay, hyp §26) → `relay` — though on the bench relay_batch cut its turns by a
-third (3.35 → 2.20, 40/40, both paths, hyp §30); real pi decides, ~90 budget units. GPT-5.6 Chat keeps `baseline`:
-`relay_batch` won its bench but missed its real-pi gate (hyp §40). `M365_FRAMING_*` still wins. Opus used to default to `minimal`, to spend less of its priority-access
+third (3.35 → 2.20, 40/40, both paths, hyp §30); real pi decides, ~90 budget units. `M365_FRAMING_*`
+still wins. Opus used to default to `minimal`, to spend less of its priority-access
 budget by sending a shorter prompt; that budget counts turns, not tokens (docs/hypotheses.md §24
 F55), so it saved nothing — see the Opus section below for why relay_batch replaced it.
 

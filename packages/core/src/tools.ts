@@ -8,6 +8,7 @@ import {
   parseFencedToolCalls,
   renderFencedCall,
   transcriptStyleForVariant,
+  type TranscriptStyle,
 } from "./fenced.js";
 
 const log = createLogger("tools");
@@ -131,7 +132,7 @@ function toolCallSummary(rawArgs: string): string {
  *  first turn (formatMessages) and every follow-up turn (the handler's delta
  *  path), which kept the old `name="unknown"` label — and a pi session is
  *  delta turns from turn 2 on, so nearly every result went out unattributed. */
-export function formatToolResponse(m: Message, history: Message[]): string {
+export function formatToolResponse(m: Message, history: Message[], style?: TranscriptStyle): string {
   let meta: { name: string; summary: string } | undefined;
   if (m.tool_call_id) {
     for (const a of history) {
@@ -143,10 +144,18 @@ export function formatToolResponse(m: Message, history: Message[]): string {
     }
   }
   const name = m.name || meta?.name || "tool";
+  const content = getMessageContent(m);
+  // The user-voice variants that paste results back themselves (relay_echo,
+  // docs §41): a fence longer than any backtick run in the output, so the
+  // output can't close it.
+  if (style?.toolResults === "terminal") {
+    const fence = "`".repeat(Math.max(3, ...[...content.matchAll(/`+/g)].map((r) => r[0].length + 1)));
+    return `Here's what your ${name} block printed on my machine:\n${fence}text\n${content || "(no output)"}\n${fence}`;
+  }
   // Show the command/args that produced this output so the model reads it in
   // context (a directory listing vs file contents vs a command's stdout).
   const cmdAttr = meta?.summary ? ` command="${meta.summary}"` : "";
-  return `<tool_response tool="${name}"${cmdAttr}>\n${getMessageContent(m)}\n</tool_response>`;
+  return `<tool_response tool="${name}"${cmdAttr}>\n${content}\n</tool_response>`;
 }
 
 /**
@@ -235,7 +244,7 @@ export function formatMessages(
       const content = getMessageContent(m);
       parts.push(`<assistant>${content ? "\n" + content : ""}\n${calls}\n</assistant>`);
     } else if (m.role === "tool") {
-      parts.push(formatToolResponse(m, messages));
+      parts.push(formatToolResponse(m, messages, style));
     } else if (m.role === "system") {
       parts.push(`<${style.systemTag}>\n${getMessageContent(m)}\n</${style.systemTag}>`);
     } else {

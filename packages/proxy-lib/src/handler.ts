@@ -25,6 +25,7 @@ import {
   couldBePriorityAccessPrefix,
   secondsUntilReset,
   type PriorityAccessExhaustion,
+  type TranscriptStyle,
   formatMessages,
   imageUrls,
   parseToolCalls,
@@ -317,7 +318,11 @@ function parseReply(text: string, tools: Parameters<typeof parseToolCalls>[1]): 
  *  so formatToolResponse takes the tool's name and command from the assistant
  *  `tool_calls` that issued it — every result used to be labelled
  *  `name="unknown"` (#50). */
-export function formatDeltaMessages(messages: ParsedMessage[], history: ParsedMessage[] = messages): string {
+export function formatDeltaMessages(
+  messages: ParsedMessage[],
+  history: ParsedMessage[] = messages,
+  style?: TranscriptStyle,
+): string {
   const parts: string[] = [];
   for (const m of messages) {
     if (m.role === "assistant") {
@@ -326,13 +331,16 @@ export function formatDeltaMessages(messages: ParsedMessage[], history: ParsedMe
       continue;
     } else if (m.role === "tool") {
       // Same rendering as the first turn: named for the call that produced it.
-      parts.push(formatToolResponse(m, history));
+      parts.push(formatToolResponse(m, history, style));
     } else if (m.role === "system") {
       // Skip system messages on follow-up turns
     } else {
       parts.push(`<${m.role}>\n${getMessageContent(m)}\n</${m.role}>`);
     }
   }
+  // The framing went out on the first turn only; a variant can say a line on
+  // every follow-up that brings tool results (relay_turn, docs §41).
+  if (style?.turnNote && messages.some((m) => m.role === "tool")) parts.push(style.turnNote);
   return parts.join("\n\n");
 }
 
@@ -420,7 +428,9 @@ export async function handleChatCompletion(
   } else {
     const newMessages = body.messages.slice(conv.sentMessageCount);
     inputImages = imageUrls(newMessages);
-    const delta = newMessages.length > 0 ? formatDeltaMessages(newMessages, body.messages) : "";
+    const delta = newMessages.length > 0
+      ? formatDeltaMessages(newMessages, body.messages, transcriptStyleForVariant(framingVariant))
+      : "";
     if (delta.length > 0) {
       text = delta;
       // Only a tool result is the thing the note corrects the model about.

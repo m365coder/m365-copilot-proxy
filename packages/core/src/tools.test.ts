@@ -437,6 +437,30 @@ describe("tool-result labelling", () => {
     );
     expect(out).toContain('<tool_response tool="tool">');
   });
+
+  it("pastes the result back in the user's voice under relay_echo (docs §41)", async () => {
+    const { formatMessages } = await import("./tools.js");
+    const out = formatMessages(
+      [
+        { role: "user", content: "list files" },
+        { role: "assistant", tool_calls: [{ id: "c1", function: { name: "bash", arguments: '{"command":"ls"}' } }] },
+        { role: "tool", tool_call_id: "c1", content: "a ``` b ```` c" },
+      ],
+      tools,
+      undefined,
+      undefined,
+      "relay_echo",
+    );
+    expect(out).not.toContain("<tool_response");
+    expect(out).toContain("Here's what your bash block printed on my machine:\n`````text\na ``` b ```` c\n`````");
+  });
+
+  it("says when the output was empty, under relay_echo", async () => {
+    const { formatToolResponse } = await import("./tools.js");
+    const { transcriptStyleForVariant } = await import("./fenced.js");
+    const out = formatToolResponse({ role: "tool", tool_call_id: "x", content: "" }, [], transcriptStyleForVariant("relay_echo"));
+    expect(out).toBe("Here's what your tool block printed on my machine:\n```text\n(no output)\n```");
+  });
 });
 
 describe("fenced tool format (the only format)", () => {

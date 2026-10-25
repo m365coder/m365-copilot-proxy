@@ -183,16 +183,18 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   **Prefer GPT-5.5 over GPT-5.6 for both, and for the default**: 5.5 wins the chat half of the
   bench (16/30 vs 7/30) and the reasoning half is a tie (26/30 vs 27/30, confab-retry off), so
   don't re-point them to 5.6 on the strength of the reasoning numbers. Those are `baseline`
-  numbers; under `relay_batch` both chat tones solve the bench (`gpt-5.5` 18/20, `gpt-5.6` 20/20, §40),
-  which is no reason to move either.
+  numbers; under the current defaults the chat tones are level (`gpt-5.5` 18/20 bench, 10/10 pi;
+  `gpt-5.6` 59/60 pi with `relay_echo`, §41), which is no reason to move either.
   `scripts/tone-probe.mjs` ends with a `MAPPED:` line that flags any mapped tone that isn't LIVE.
   See docs/hypotheses.md §19.
 - **The `<system>`-tagged framings trip the JailBreak classifier on the GPT agent path (since Oct 2026).**
   `baseline` and `minimal` drew 1–6 classifier refusals per 10 tasks on every GPT-5.x tone and `magic`;
-  the user-voice `relay_batch` drew none in 330 bench tasks (docs §40 F98). Every GPT-5.x tone but
-  `Gpt_5_6_Chat`, `magic` and `Claude_Sonnet_Reasoning` default to `relay_batch` (`RELAY_BATCH_TONES`);
-  `Gpt_5_6_Chat` won the bench under it but gave up in real pi (16/20), so it keeps `baseline` for now.
-  Don't move the others back to `baseline`.
+  the user-voice `relay_batch` drew none in 330 bench tasks (docs §40 F98). Every GPT-5.x tone, `magic` and
+  `Claude_Sonnet_Reasoning` default to `relay_batch` (`RELAY_BATCH_TONES`), and `Gpt_5_6_Chat` to
+  `relay_echo`: under relay_batch it gave up on the turn after a tool result (22/30 in real pi), and
+  relay_echo pastes each result back in the user's voice (59/60, both scenarios). Don't move any of them back to
+  `baseline`. A follow-up turn carries only the tool results, not the framing — `TranscriptStyle`'s
+  `turnNote` / `toolResults` are the levers for that turn (§41).
 - **M365 disengages on large tool payloads.** Keep injected toolsets lean. This is why
   pi works and heavy harnesses (opencode) don't. The proxy also enforces one tool call per
   turn and strips M365's invented `{confidence}`/`{final}` JSON (`M365_ALLOW_MULTI_TOOL` to opt out).
