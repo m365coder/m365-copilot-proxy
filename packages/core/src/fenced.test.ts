@@ -639,6 +639,10 @@ describe("defaultFramingForTone", () => {
     for (const id of ["gpt-5.6", "gpt-5.6-quick"]) expect(defaultFramingForModel(id)).toBe("relay_echo_first");
   });
 
+  it("gives the §44 Gpt_5_N_Auto tones relay_onepass_first", () => {
+    for (const id of ["gpt-5.2-auto", "gpt-5.3-auto", "gpt-5.4-auto"]) expect(defaultFramingForModel(id)).toBe("relay_onepass_first");
+  });
+
   it("leaves every other tone on the bench-tuned baseline", () => {
     for (const tone of ["Claude_Fable", "Claude_Reasoning", undefined]) {
       expect(defaultFramingForTone(tone)).toBeUndefined();

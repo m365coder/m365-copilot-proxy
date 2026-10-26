@@ -138,21 +138,32 @@ const MODEL_TONES: Record<string, string> = {
   // fallback. On a premium account `gpt-6.1-sol` itself goes paid (docs §41).
   "gpt-6.1-sol-included": "Gpt_61_Sol_Reasoning",
 
+  // The `Gpt_5_N_Auto` tones (docs §44) match `magic` on each kind of account.
+  // On the premium account (both scenarios) each sent ChainOfThoughtSummary on
+  // one bench turn in ~22, the first turn of `fix-bug`, and on no other task, as
+  // `magic` did there on Oct 24; on a non-premium account neither sent any. The
+  // `Gpt_5_N_Reasoning` tones sent it on 5–16 turns in ~22 on both kinds of
+  // account, `Gpt_5_N_Chat` on none. Served like their siblings: both scenarios,
+  // with the tool agent on every account, relay_onepass_first (fenced.ts).
+
   // GPT-5.4. Bare `gpt-5.4` has always been the reasoning tone (unlike its
   // siblings); only the `-quick` alias moved, from the retired `Gpt_5_4_Quick`.
   "gpt-5.4": "Gpt_5_4_Reasoning",
   "gpt-5.4-think-deeper": "Gpt_5_4_Reasoning",
   "gpt-5.4-quick": "Gpt_5_4_Chat",
+  "gpt-5.4-auto": "Gpt_5_4_Auto",
 
   // GPT-5.3 (was `Gpt_5_3_Quick`, now retired)
   "gpt-5.3": "Gpt_5_3_Chat",
   "gpt-5.3-quick": "Gpt_5_3_Chat",
   "gpt-5.3-think-deeper": "Gpt_5_3_Reasoning",
+  "gpt-5.3-auto": "Gpt_5_3_Auto",
 
   // GPT-5.2 (was `Gpt_5_2_Quick`, now retired)
   "gpt-5.2": "Gpt_5_2_Chat",
   "gpt-5.2-quick": "Gpt_5_2_Chat",
   "gpt-5.2-think-deeper": "Gpt_5_2_Reasoning",
+  "gpt-5.2-auto": "Gpt_5_2_Auto",
 };
 
 export function getToneForModel(model: string): string {

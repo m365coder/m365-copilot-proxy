@@ -170,6 +170,28 @@ describe("GPT-5.6 model routing", () => {
   });
 });
 
+describe("the §44 Gpt_5_N_Auto tones", () => {
+  afterEach(() => resetAgentRoutes());
+
+  it("maps gpt-5.N-auto to Gpt_5_N_Auto, routed like its siblings: paid on a premium account, included elsewhere, unmetered", () => {
+    for (const n of ["2", "3", "4"]) {
+      const id = `gpt-5.${n}-auto`;
+      expect(getToneForModel(id)).toBe(`Gpt_5_${n}_Auto`);
+      expect(getAvailableModels()).toContain(id);
+      notePaidSeat(true);
+      expect(getScenarioForModel(id)).toEqual(PAID);
+      expect(meteredBudgetOf(id)).toBeNull();
+      notePaidSeat(false);
+      expect(getScenarioForModel(id)).toEqual(INCLUDED);
+      resetPaidSeat();
+    }
+  });
+
+  it("sends their tool requests with the agent, like the other GPT-5.x tones", () => {
+    for (const n of ["2", "3", "4"]) expect(requestUsesAgent(`gpt-5.${n}-auto`, true)).toBe(true);
+  });
+});
+
 describe("GPT-6 routing", () => {
   it("maps the advertised model ID to the reasoning tone", () => {
     expect(getToneForModel("gpt-6-think-deeper")).toBe("Gpt_6_Reasoning");

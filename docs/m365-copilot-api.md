@@ -209,6 +209,7 @@ There is no `model` parameter. The `tone` string on the chat message picks the m
 | `gpt-5.3-think-deeper` | `Gpt_5_3_Reasoning` | |
 | `gpt-5.2` / `gpt-5.2-quick` | `Gpt_5_2_Chat` | was `Gpt_5_2_Quick` (retired) |
 | `gpt-5.2-think-deeper` | `Gpt_5_2_Reasoning` | |
+| `gpt-5.4-auto` / `gpt-5.3-auto` / `gpt-5.2-auto` | `Gpt_5_N_Auto` | Behave like `magic` on each kind of account: on the premium account each streams `ChainOfThoughtSummary` on one bench turn in ~22, the first turn of `fix-bug`, and on no other task; on a non-premium account on none, as `magic` there. `Gpt_5_N_Chat` streams it on none and `Gpt_5_N_Reasoning` on 5–16 on both. Serve on both scenarios, with and without the tool agent, on every account; unmetered. Tool agent, `relay_onepass_first` (hypotheses §44) |
 
 Mapping lives in `MODEL_TONES` (`copilot.ts`). `*_Reasoning` tones take 10–30s.
 

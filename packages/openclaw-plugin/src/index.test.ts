@@ -73,6 +73,11 @@ describe("generateOpenClawConfig", () => {
     expect(models.find((m) => m.id === "quick")?.reasoning).toBe(false);
   });
 
+  it("names the §44 Gpt_5_N_Auto tones, as chat models", () => {
+    const models = generateOpenClawConfig().models.providers.m365.models;
+    expect(models.find((m) => m.id === "gpt-5.3-auto")).toMatchObject({ name: "GPT-5.3 Auto", reasoning: false });
+  });
+
   it("names the two Opus models apart — one tone, two models (§24, §36)", () => {
     const models = generateOpenClawConfig().models.providers.m365.models;
     expect(models.find((m) => m.id === "claude-opus")?.name).toBe("Claude Opus 5.5");

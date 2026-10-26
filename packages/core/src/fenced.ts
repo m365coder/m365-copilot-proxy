@@ -422,6 +422,14 @@ const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
   "Claude_Sonnet_Reasoning",
 ]);
 
+// Tones on relay_onepass_first (docs §44); Sonnet 5 and 5.5 have their own
+// constants, below.
+const RELAY_ONEPASS_FIRST_TONES: ReadonlySet<string> = new Set([
+  "Gpt_5_2_Auto",
+  "Gpt_5_3_Auto",
+  "Gpt_5_4_Auto",
+]);
+
 /** The framing a tone should default to when the caller hasn't overridden it.
  *
  *  `Claude_Opus` — both models, Opus 4.8 (`claude-opus-4.8`, included scenario;
@@ -505,10 +513,19 @@ const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
  *  checks, kept 20/20 at 12% fewer turns (2.65 vs 3.00 per run, p = 0.003; paid
  *  scenario 10/10).
  *
+ *  `Gpt_5_2_Auto`, `Gpt_5_3_Auto` and `Gpt_5_4_Auto` (docs §44) default to
+ *  relay_onepass_first. With the tool agent on the included scenario, `baseline`
+ *  solved 8–9/10, its misses mostly the JailBreak Classifier's refusals;
+ *  relay_batch, relay_echo_first and relay_onepass_first 10/10 at 2.0–2.4 turns
+ *  per task. In real pi relay_onepass_first took 2.60 turns per run against
+ *  relay_echo_first's 2.70 over the three (30 runs each, 30/30 solved, p = 0.53;
+ *  no tone's own difference was significant either).
+ *
  *  Every other tone keeps the bench-tuned `baseline` byte-for-byte. */
 export function defaultFramingForTone(tone?: string): string | undefined {
   if (tone && RELAY_BATCH_TONES.has(tone)) return "relay_batch";
   if (tone === "Gpt_5_6_Chat") return "relay_echo_first";
+  if (tone && RELAY_ONEPASS_FIRST_TONES.has(tone)) return "relay_onepass_first";
   if (tone === "Claude_Opus") return "relay_batch";
   if (tone === "Claude_Sonnet") return "relay_batch";
   if (tone === "Claude_Sonnet_5") return SONNET_5_DEFAULT_FRAMING;

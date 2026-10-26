@@ -329,6 +329,7 @@ without NixOS: `nix run github:cramt/m365-copilot-proxy -- 4141`.
 | `gpt-5.4` / `gpt-5.4-quick` | Gpt_5_4_* | GPT-5.4 (bare `gpt-5.4` is the reasoning tone). `relay_batch`: 20/20 and 18/20 on the bench, 10/10 each driving real pi |
 | `gpt-5.3` / `gpt-5.3-think-deeper` | Gpt_5_3_* | GPT-5.3. `relay_batch`: 18/20 and 20/20 on the bench, 10/10 each driving real pi |
 | `gpt-5.2` / `gpt-5.2-think-deeper` | Gpt_5_2_* | GPT-5.2. `relay_batch`: 20/20 each on the bench, 10/10 each driving real pi |
+| `gpt-5.4-auto` / `gpt-5.3-auto` / `gpt-5.2-auto` | Gpt_5_N_Auto | Behave like `m365-copilot` on each kind of account: on a premium account each sends a chain of thought on the first turn of the bench's bug-fix task and on no other turn; on any other account on none. The version's `-quick` model sends none, its `-think-deeper` one sends it on a quarter to two thirds of turns. Defaults to `relay_onepass_first`: 10/10 each on the bench and driving real pi |
 
 Bench scores are with the confab-retry **off** (`M365_NO_CONFAB_RETRY=1`), so every first-try
 give-up counts, including ones the proxy's retry would normally recover. The GPT-5.x, `m365-copilot`

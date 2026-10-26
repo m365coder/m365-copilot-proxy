@@ -39,6 +39,10 @@ const TONES = [
   { tone: "Gpt_5_5_Chat", note: "g365 current" },
   { tone: "Gpt_5_5_Reasoning", note: "g365 current" },
   { tone: "Gpt_5_6_Reasoning", note: "confirmed live 2026-08-06" },
+  // The Gpt_5_N_Auto tones (§44): on each kind of account they behave like `magic`.
+  { tone: "Gpt_5_2_Auto", note: "gpt-5.2-auto", ...INCLUDED },
+  { tone: "Gpt_5_3_Auto", note: "gpt-5.3-auto", ...INCLUDED },
+  { tone: "Gpt_5_4_Auto", note: "gpt-5.4-auto", ...INCLUDED },
   // Gpt_5_6_Chat: paired, because this is the tone §12.15 recorded as "dead"
   // on the strength of included-scenario probes alone while it was serving
   // fine on the paid one (§18 F33). Both cells should now be DeepLeo — the

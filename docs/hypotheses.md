@@ -6242,3 +6242,143 @@ from 80 to 17, and no run reached the wall.
   is head to head, within one sweep.
 - Not run: a bench arm (H43c is real pi only). Open: does Sonnet 4.6 (`claude-sonnet-4.6`, still on
   `relay_batch`) take one pass too?
+
+---
+
+## 44. Oct 26 2026 — `Gpt_5_2_Auto`, `Gpt_5_3_Auto`, `Gpt_5_4_Auto`
+
+`tone-probe` runs on Oct 22–25 found `Gpt_5_2_Auto`, `Gpt_5_3_Auto` and `Gpt_5_4_Auto` accepted by the
+validator and `DeepLeo` on the included scenario. They self-ID as every tone except the Claude models
+does now (GPT-5.6 on the premium account, GPT-5 / GPT-5.5 on a non-premium one, §40), so self-ID doesn't
+identify them. What are they, which framing makes each drive a coding loop, and does any of them do
+better on a premium account, on the paid scenario (`OfficeWebPaidCopilot`) or without the tool agent?
+
+### Design and decision rule (fixed 08:25Z Oct 26, before any bench arm ran)
+Temporary model IDs for the bench: `gpt-5.2-auto`, `gpt-5.3-auto`, `gpt-5.4-auto`. `phase-sweep.sh`, 10 bench
+tasks per arm, confab retry off, `M365_AVOID_THROTTLING=1`, a proxy per arm.
+
+**Stage A, framing screen** (`OfficeWebIncludedCopilot`, a non-premium account, with the tool agent, the path
+the code gives a GPT tone). Four framings, as different as any we have, in a rotated order per tone: `baseline`
+(`<system>`-tagged rules), `relay_batch` (user voice, batched; the GPT-5.x default), `relay_echo_first` (tool
+results pasted back in the user's voice, plus the one-pass request after the task; `gpt-5.6`'s default) and
+`relay_onepass_first` (`relay_batch` plus the one-pass request; the default of Sonnet 5 and Sonnet 5.5).
+
+**Alongside it, on the premium account** (`OfficeWebPaidCopilot`, `M365_PAID_SEAT=1`): each tone under
+`relay_batch`, with the tool agent and without, the order alternating by tone.
+
+**Rule.**
+1. *Framing*, per tone, on its stage-A path: most solves; among framings within 1 of the best, fewest
+   Disengaged + jailbreak + sandbox turns, then fewest turns per task. If the top two are within 1 solve and
+   15% in turns, both get 10 more tasks on another non-premium account (order reversed), and the rule is
+   applied again over the 20.
+2. *Path*: under the winner, 10 tasks on the other path (same account kind and scenario). The other path
+   wins if it solves ≥ 2 more, or within 1 with ≥ 15% fewer turns per task and no more Disengaged +
+   jailbreak + sandbox turns. The premium arms above say the same for the paid scenario under
+   `relay_batch`.
+3. *Account and scenario* (informational unless rule 4 applies): the winner on the chosen path, 10 tasks on
+   the premium account's included scenario and 10 on its paid one, against stage A's non-premium arm.
+   "Stronger" means ≥ 2 more solves per 10, or within 1 with ≥ 15% fewer turns per task.
+4. *Routing*: a premium account keeps the paid scenario (§41's policy) unless paid solves ≥ 3 per 10 fewer
+   than included there; a `metering` key that moves on paid turns marks the tone metered (`meteredBudgetOf`).
+5. *Usable*: the shipped configuration solves ≥ 9/10 in real pi (fix-bug + multi, 5 runs each); if the
+   winner doesn't, the runner-up gets the gate.
+
+### F109 — they serve on every route, and the probes can't tell them from the GPT chat tones 🟢
+**Routes** (`agent-tone-probe --baseline`, 08:00–08:12Z Oct 26, self-ID prompt): each answered
+(`DeepLeo`) with the tool agent (`3PDeclarativeAgent`) and without it on `OfficeWebIncludedCopilot`, on
+the premium account and on every non-premium account probed, and on `OfficeWebPaidCopilot` on the
+premium account: 24 of 24 turns. Nothing here is a dead route on any account.
+
+**Self-ID.** The same as every tone except the Claude models (§40): "Microsoft Copilot powered by
+GPT-5.6" on the premium account, both scenarios, and today on one non-premium account; "M365
+Copilot, based on the GPT-5 chat model" or "GPT-5.5" on another. On Oct 22–23 `tone-probe` found
+the same on the premium account for 22 of 25 live tones; the three exceptions were the ones that
+name their Claude model (`Claude_Opus`, `Claude_Sonnet`, `Claude_Sonnet_5`).
+
+**Behaviour** (`fingerprint-probe.mjs`, agent-less, code interpreter on as the proxy sends it, grounding off,
+one turn per cell; four prompts: run Python and print the environment, a clock puzzle, a short olympiad proof,
+list your tools; the premium account on `OfficeWebPaidCopilot`, non-premium accounts on
+`OfficeWebIncludedCopilot`, with `Gpt_5_{2,3,4}_{Chat,Reasoning}` and `magic` as controls):
+- They ran the code in M365's code interpreter (`/mnt/data`, user `oai`, `CodeGenerator` + `CodeInterpreter`
+  frames), like every control, and sent no `ChainOfThoughtSummary` on any prompt: 0 of 33 turns, the olympiad
+  proof too. The `Gpt_5_{2,3,4}_Reasoning` controls sent one on 13 of 24. So they answered as chat tones here,
+  and none escalated the hard prompt to reasoning.
+- Neither the puzzle (Friday 06:51 vs Tuesday 13:42, both defensible; tones split differently run to run)
+  nor the tool list (most refuse; those that list name OpenAI's `multi_tool_use.parallel`) separates them.
+  `Gpt_5_2_Auto` got the proof wrong on one non-premium account ("false", from 4^5 = 256).
+- **Side finding:** after ~10 code-interpreter runs in ten minutes, a non-premium account's sandbox refused:
+  "Sorry, you have reached the maximum number of available computers. Please try again in an hour."
+  (`contentOrigin: ComputerUseLimiter`, ~125 s). The premium account ran 11 without it. It may cut into
+  agent-less bench arms whose model works in the sandbox.
+
+**Knowledge, not the stated cutoff** (the `cutoff` prompt, premium account, 13:30Z, both scenarios, grounding
+off: the Best Picture of March 2025, the papal name of May 2025, the Nobel Prize in Literature of October
+2025). Five of their six cells named *Anora*, four Leo XIV, none the October prize (which `Gpt_5_6_Chat` @
+included named); `Gpt_5_2_Auto` @ included said "unknown" to all three. That doesn't place them either.
+
+So the probes can't tell them from the GPT-5.x chat tones; the bench has to.
+
+**Addendum, 09:35Z Oct 26 (one stage-A arm per tone read, none of the framings compared yet).** The user-voice
+arms solve 9–10/10 (20–23 turns per 10 tasks), so rule 1's tie will be the usual case, and ten more bench tasks
+resolve turns poorly: F107 and F108 found the one-pass gains in real pi, not on the bench. So a tie goes
+straight to real pi instead of ten more bench tasks: the top two, fix-bug + multi, 5 + 5 runs each, interleaved,
+on the stage-A path; the winner is the one with more solves, then fewer turns per run (task-stratified
+permutation p < 0.05); still tied, fewer bench turns per task. That pi arm is also rule 5's gate.
+
+**Addendum, 11:30Z Oct 26 (stage A done on the premium account, not yet for these tones; no pi run
+yet).** Two cases the rule didn't fix: (a) a tie for second place sends all the tied framings to real pi
+with the first; (b) rule 3 compares accounts and scenarios under `relay_batch`, the one framing every
+tone has on every path already (stage A, the premium arms), rather than waiting for the pi winner: 10
+tasks per tone on the premium account's `OfficeWebIncludedCopilot`, on the stage-A path.
+
+**Addendum, 12:35Z Oct 26 (written after `gpt-5.2-auto`'s real-pi arms and one other tone's, before any
+other).** `gpt-5.2-auto` came out close (2.5 vs 2.7 turns per run, 10/10 each) on a tie of bench turns, which
+the addendum above leaves open. A tone whose pi comparison isn't significant then takes the framing that wins
+the same comparison pooled over its group (here the three `Gpt_5_N_Auto` tones, with the tool agent), stratified
+by tone and task: more solves, then fewer turns per run; still tied, fewer pooled bench turns per task.
+
+### F110 — `relay_onepass_first`, with the tool agent; they match `magic` 🟢
+**Stage A** (the tool agent, `OfficeWebIncludedCopilot`, a non-premium account; solved, turns per 10 tasks):
+
+| tone | `baseline` | `relay_batch` | `relay_echo_first` | `relay_onepass_first` |
+|---|---|---|---|---|
+| `gpt-5.2-auto` | 8/10, 21 (1 jailbreak) | 10/10, 22 | 10/10, 20 | 10/10, 20 |
+| `gpt-5.3-auto` | 9/10, 23 (1 jailbreak) | 10/10, 23 | 10/10, 20 | 10/10, 20 |
+| `gpt-5.4-auto` | 8/10, 21 (2 jailbreak) | 10/10, 24 | 10/10, 20 | 10/10, 23 |
+
+Every tone tied by rule 1, so `relay_onepass_first` and `relay_echo_first` went to real pi
+(fix-bug + multi, 5 + 5, same path; turns per run, every run solved): `gpt-5.2-auto` 2.50 vs 2.70
+(p = 0.64), `gpt-5.3-auto` 2.50 vs 2.80 (p = 0.17), `gpt-5.4-auto` 2.80 vs 2.60 (p = 0.58). None
+is significant, so by the 12:35Z addendum the pooled comparison over the three decides:
+`relay_onepass_first` 2.60 against `relay_echo_first`'s 2.70 (30 runs each, 30/30 solved each, p
+= 0.53). So **all three default to `relay_onepass_first`**, as Sonnet 5 and Sonnet 5.5 do.
+
+**Rule 2, agent-less** (`relay_onepass_first`, `OfficeWebIncludedCopilot`, a non-premium
+account): 10/10 each, at 20 turns per 10 tasks against 20, 20 and 23 with the agent
+(`gpt-5.4-auto`: −13%, under rule 2's 15%). They keep the agent, like every GPT-5.x tone.
+
+**Rule 3** (`relay_batch`, 10 tasks each; solved, turns):
+
+| tone | non-premium, `OfficeWebIncludedCopilot`, agent | premium, `OfficeWebIncludedCopilot`, agent | premium, `OfficeWebPaidCopilot`, agent | premium, `OfficeWebPaidCopilot`, agent-less |
+|---|---|---|---|---|
+| `gpt-5.2-auto` | 10/10, 22 | 10/10, 22 | 10/10, 22 | 10/10, 21 |
+| `gpt-5.3-auto` | 10/10, 23 | 9/10, 21 | 9/10, 22 | 10/10, 21 |
+| `gpt-5.4-auto` | 10/10, 24 | 9/10, 22 | 9/10, 22 | 9/10, 21 |
+
+No cell is "stronger" by rule 3. Every miss is a `find-needle` refusal ("I can't help retrieve, expose, or
+disclose secret codes…"), all on the premium account: under the user-voice framings `gpt-5.3-auto` and
+`gpt-5.4-auto` refused it in 5 of 6 premium arms and 0 of 8 non-premium ones (Fisher p = 0.003), and
+`gpt-5.2-auto` in none of 7. In §40 `gpt-5.3` and `gpt-5.4-quick` refused it and `gpt-5.2` didn't, on both
+kinds of account. No `metering` key moved on their paid turns (rule 4).
+
+**Rule 5.** Real pi under `relay_onepass_first` with the agent: 10/10 each on a non-premium
+account (above), and 10/10 each on the premium account's paid scenario: `gpt-5.2-auto` 2.50
+turns per run, `gpt-5.3-auto` 2.50, `gpt-5.4-auto` 2.80.
+
+**Fingerprint: the same chain of thought as `magic`, account by account.** On the premium account, on both
+scenarios, each `Gpt_5_N_Auto` arm sent `ChainOfThoughtSummary` on exactly one bench turn, the first turn of
+`fix-bug` (9 of 9 arms), and in real pi on the paid scenario on 3–5 turns per 5 runs; on a non-premium account
+on none (0 of ~500 bench and pi turns). The controls split the same way: `magic` sent one, on `fix-bug`, on the
+premium account's paid scenario (Oct 24, §41) and none on a non-premium account (Oct 23, §40); the
+`Gpt_5_N_Reasoning` tones sent it on 5–16 of ~22 turns on both kinds of account; the `Gpt_5_N_Chat` tones on
+none. The single-turn probes (F109) didn't show it.
