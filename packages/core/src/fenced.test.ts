@@ -643,8 +643,29 @@ describe("defaultFramingForTone", () => {
     for (const id of ["gpt-5.2-auto", "gpt-5.3-auto", "gpt-5.4-auto"]) expect(defaultFramingForModel(id)).toBe("relay_onepass_first");
   });
 
+  it("gives the §46 Claude_* tones relay_echo_first: 23–31% fewer real-pi turns than relay_batch", () => {
+    notePaidSeat(false);
+    try {
+      for (const id of ["claude-auto", "claude-chat", "claude-container", "claude-fable"]) {
+        expect(defaultFramingForModel(id)).toBe("relay_echo_first");
+      }
+    } finally {
+      resetPaidSeat();
+    }
+  });
+
+  it("gives claude-auto on a premium account relay_batch, Opus 5.5's default: there it self-IDs as Opus 5.5 (§46)", () => {
+    notePaidSeat(true);
+    try {
+      expect(defaultFramingForModel("claude-auto")).toBe("relay_batch");
+      for (const id of ["claude-chat", "claude-container", "claude-fable"]) expect(defaultFramingForModel(id)).toBe("relay_echo_first");
+    } finally {
+      resetPaidSeat();
+    }
+  });
+
   it("leaves every other tone on the bench-tuned baseline", () => {
-    for (const tone of ["Claude_Fable", "Claude_Reasoning", undefined]) {
+    for (const tone of ["Claude_Reasoning", undefined]) {
       expect(defaultFramingForTone(tone)).toBeUndefined();
     }
   });

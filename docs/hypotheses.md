@@ -6417,3 +6417,119 @@ nor starts the 75-minute hold. The path it came on pauses (1, 2, 4, then 8 min b
 request in the process) and the proxy re-sends the request in a fresh conversation when the pause ends, until
 a turn on that path answers or the request has waited as long as it may (15 min streamed, 2 min not); the
 bench runs a task that still ends on it again from the start, up to six times.
+
+---
+
+## 46. Oct 26 2026 — `Claude_Auto`, `Claude_Chat`, `Claude_Container`, `Claude_Fable`
+
+`tone-probe` runs on Oct 22–25 found these four `Claude_*` tones accepted by the validator and `DeepLeo` on
+the included scenario (`Claude_Chat` and `Claude_Fable` on the paid one too). `Claude_Fable` has been in the
+web client's tone list since §12.6 and was left unmapped for its self-ID. They self-ID as every tone except
+the Claude models does now (GPT-5.6 on the premium account, GPT-5 / GPT-5.5 on a non-premium one, §40), with
+one exception below. Are they Claude, which framing makes each drive a coding loop, and does any of them do
+better on a premium account, on the paid scenario (`OfficeWebPaidCopilot`) or with the tool agent?
+
+### Design and decision rule
+§44's design and rule, fixed at 08:25Z Oct 26 before any bench arm ran, with its addenda, run at the same
+time: temporary model IDs `claude-auto`, `claude-chat`, `claude-container`, `claude-fable`; stage A on
+another non-premium account, agent-less, the path the code gives a `Claude_*` tone; on the premium account
+each tone under `relay_batch` with the tool agent and without, except `Claude_Auto`, agent-less only,
+since its paid turns spend Opus 5.5's budget (F112). Here the 11:30Z addendum's case (a) applied
+(`claude-fable` had two framings tied for second), and the 12:35Z one, written after `claude-chat`'s
+real-pi arms and one other tone's, pooled the four tones agent-less as a group.
+
+### F112 — every route serves; `Claude_Auto` on the paid scenario behaves like Claude and spends Opus 5.5's budget; the rest probe like the GPT chat tones 🟢
+**Routes** (the same `agent-tone-probe --baseline` runs): each answered (`DeepLeo`) with the tool agent
+(`3PDeclarativeAgent`) and without it on `OfficeWebIncludedCopilot`, on the premium account and on
+every non-premium account probed, and on `OfficeWebPaidCopilot` on the premium account: 32 of 32 turns.
+
+**Self-ID.** The GPT self-ID of §44 F109, except `Claude_Auto` on the paid scenario: "built on
+Anthropic's Claude Opus 5.5 model", with the agent and without.
+
+**Behaviour** (`fingerprint-probe.mjs`, the four prompts of §44 F109, with `Claude_Reasoning`,
+`Claude_Sonnet` and `Claude_Sonnet_5` as controls):
+- **`Claude_Auto` @ paid** ran the code in **`/home/claude`** (it wrote `cd /home/claude` into its
+  own call, as `Claude_Sonnet_5` @ paid did, with no `GeneratedCode` frames) and streamed
+  **`ChainOfThoughtSummary`** on 2 of 3 turns. Every one of its paid turns lowered
+  `ClaudeOpusQueryDaily` and `ClaudeOpusQuery75` by one (39 → 38 → 37 → 36 over four turns; no
+  other tone's turn moved them): it draws on Opus 5.5's priority-access budget.
+- **The rest**, `Claude_Auto` @ included among them, ran it in M365's code interpreter
+  (`/mnt/data`, user `oai`, `CodeGenerator` + `CodeInterpreter` frames), like the GPT tones, and
+  sent no `ChainOfThoughtSummary` on any prompt: 0 of 41 turns.
+
+**Knowledge** (§44 F109's `cutoff` prompt, premium account, 13:30Z). `Claude_Auto` @ paid and `Claude_Opus`
+@ paid gave the same three lines, word for word (*Anora*, Leo XIV, László Krasznahorkai), both with a
+`ChainOfThoughtSummary`; `Claude_Sonnet_5` @ paid named all three too. The rest named *Anora* and Leo XIV
+and not the October prize, except `Claude_Container` @ included, which said "unknown" to all three.
+
+So by these probes only `Claude_Auto` @ paid differs from the GPT chat tones, and it matches
+`Claude_Opus` @ paid (Opus 5.5) in self-ID, knowledge and budget.
+
+### F113 — `relay_echo_first`, agent-less; no account or scenario does better 🟢
+**Stage A** (agent-less, `OfficeWebIncludedCopilot`, a non-premium account; solved, M365 turns per 10 tasks):
+
+| tone | `baseline` | `relay_batch` | `relay_echo_first` | `relay_onepass_first` |
+|---|---|---|---|---|
+| `claude-auto` | 4/10, 14 (2 jailbreak, 1 sandbox) | 9/10, 21 | 10/10, 20 | 9/10, 19 |
+| `claude-chat` | 1/10, 13 (2 jailbreak) | 10/10, 22 | 10/10, 20 | 10/10, 20 |
+| `claude-container` | 0/10, 10 (2 jailbreak, 8 sandbox) | 10/10, 21 | 10/10, 21 | 10/10, 22 |
+| `claude-fable` | 0/10, 10 (2 jailbreak, 8 sandbox) | 10/10, 21 | 10/10, 20 | 10/10, 21 |
+
+Under `baseline` they failed the way the GPT tones do agent-less (§36, §40): "I can't directly access or
+modify files in your environment because I don't have a filesystem-editing tool", the classifier's "Hmm...it
+looks like I can't chat about this", and `claude-container` and `claude-fable` working in M365's code
+interpreter on 8 of 10 tasks ("I could not find any `config.json` file in the accessible workspace
+(`/mnt/data`)"). The two user-voice misses were `claude-auto`'s `find-needle` refusals. Every tone tied by
+rule 1, so its top framings went to real pi (fix-bug + multi, 5 + 5, same path; turns per run, every run
+solved, no sandbox, Disengaged or jailbreak turn):
+
+| tone | `relay_echo_first` | the other framing(s) |
+|---|---|---|
+| `claude-auto` | 3.00 | `relay_onepass_first` 2.70 (p = 0.38) |
+| `claude-chat` | 2.60 | `relay_onepass_first` 2.70 (p = 1.0) |
+| `claude-container` | 2.50 | `relay_batch` 3.60 (p < 0.001) |
+| `claude-fable` | 2.70 | `relay_batch` 3.50 (p < 0.001), `relay_onepass_first` 2.90 (p = 0.68) |
+
+By the 12:35Z addendum the pooled `relay_echo_first` vs `relay_onepass_first` over `claude-auto`, `claude-chat`
+and `claude-fable` is a tie, 2.77 turns per run each (30 runs, 30/30 solved each), and pooled bench turns break
+it: 81 per 40 tasks (40/40) against 82 (39/40). So **all four default to `relay_echo_first`**.
+
+**Rule 2, with the tool agent** (`relay_echo_first`, `OfficeWebIncludedCopilot`, a non-premium account):
+`claude-chat` 10/10 at 22 turns, `claude-container` 10/10 at 23, `claude-fable` 10/10 at 21, against 20, 21
+and 20 agent-less; `claude-auto` 5 of 5 valid tasks (14 turns in 6 tasks) before the account's
+`OboThrottled` (§45). The agent path never did better, so they stay agent-less, the `/^Claude_/` default.
+
+**Rule 3** (`relay_batch`, 10 tasks each; solved, turns):
+
+| tone | non-premium, `OfficeWebIncludedCopilot` | premium, `OfficeWebIncludedCopilot` | premium, `OfficeWebPaidCopilot` | premium, `OfficeWebPaidCopilot`, with the agent |
+|---|---|---|---|---|
+| `claude-auto` | 9/10, 21 | 9/10, 20 | 10/10, 22 | — |
+| `claude-chat` | 10/10, 22 | 10/10, 21 | 10/10, 22 | 9/10, 22 |
+| `claude-container` | 10/10, 21 | 10/10, 22 | 10/10, 21 | 10/10, 21 |
+| `claude-fable` | 10/10, 21 | 9/10, 20 | 10/10, 21 | 9/10, 20 |
+
+No cell is "stronger" by rule 3 (≥ 2 solves, or ≥ 15% fewer turns). The misses are `find-needle` refusals
+(`claude-auto` on the included scenario of both kinds of account, `claude-fable` on the premium account's
+included one, `claude-chat` on the paid one with the agent) and one "I can't generate a file" give-up
+(`claude-fable`, paid, with the agent). Rule 4: no `metering` key moved on the paid turns of `claude-chat`,
+`claude-container` or `claude-fable`; `claude-auto`'s took one unit of `ClaudeOpusQueryDaily` and
+`ClaudeOpusQuery75` each (34 → 13 and 69 → 48 over its 22 turns), so it is metered as Opus (F112).
+
+**Rule 5.** Real pi under `relay_echo_first`, agent-less: 10/10 each on a non-premium account (the table
+above) and on the premium account's paid scenario 10/10 each for `claude-container` (2.50 turns per run),
+`claude-chat` (2.60) and `claude-fable` (2.70).
+
+**`claude-auto` on the paid scenario** behaves like `Claude_Opus` there (F112) and isn't benched beyond
+one `relay_batch` arm (10/10, 2.2 turns per task, one sandbox turn), since every turn spends Opus 5.5's
+budget. It defaults to `relay_batch`, Opus 5.5's own, keyed on the model ID (`isClaudeAutoPaidModel`, as
+Sonnet 5.5 is), not to the tone's `relay_echo_first`.
+
+**Fingerprint.** Over ~800 bench and pi turns `Claude_Chat`, `Claude_Container`, `Claude_Fable`, and
+`Claude_Auto` on the included scenario, sent no `ChainOfThoughtSummary`; `Claude_Auto` on the paid scenario
+sent it on 4 of 22. Nothing else in their bench behaviour separates them from the GPT-5.x chat tones.
+
+**H46a (open) — does `relay_echo_first` beat `relay_batch` on Opus 5.5?** `claude-opus`, and `claude-auto`
+on a premium account, default to `relay_batch`; `relay_echo_first` took 23–31% fewer real-pi turns than
+`relay_batch` on `claude-container` and `claude-fable`, and Opus 5.5's budget counts turns. Untested: a pi
+arm per framing (~30 turns each) is most of a day's budget. Probe: real pi fix-bug + multi, 5 + 5 per
+framing, after a 00:00Z reset, on `claude-opus`.

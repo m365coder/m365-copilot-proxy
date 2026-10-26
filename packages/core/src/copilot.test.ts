@@ -20,6 +20,7 @@ import {
   isSonnet5Model,
   isSonnet55Model,
   isAgentRouteAlive,
+  isClaudeAutoPaidModel,
   isAgentlessRouteAlive,
   isPremiumOnlyModel,
   noteAgentlessRouteAlive,
@@ -328,6 +329,54 @@ describe("GPT-6.1 Sol routing (§27)", () => {
     noteAgentRouteDead("Gpt_61_Sol_Reasoning");
     expect(toneUsesToolAgent("Gpt_61_Sol_Reasoning")).toBe(false);
     expect(toneUsesToolAgent("Gpt_6_Sol_Reasoning")).toBe(true);
+  });
+});
+
+describe("the §46 Claude_* tones: Claude_Auto, Claude_Chat, Claude_Container, Claude_Fable", () => {
+  afterEach(() => {
+    delete process.env.M365_FORCE_AGENT;
+    resetAgentRoutes();
+  });
+
+  const IDS = { "claude-auto": "Claude_Auto", "claude-chat": "Claude_Chat", "claude-container": "Claude_Container", "claude-fable": "Claude_Fable" };
+
+  it("maps each ID to its tone, and routes it like any other tone: paid on a premium account, included elsewhere (§41)", () => {
+    for (const [id, tone] of Object.entries(IDS)) {
+      expect(getToneForModel(id)).toBe(tone);
+      expect(getAvailableModels()).toContain(id);
+      expect(PAID_SCENARIO_TONES.has(tone)).toBe(false);
+      expect(prefersPaidScenario(id)).toBe(true);
+      notePaidSeat(true);
+      expect(getScenarioForModel(id)).toEqual(PAID);
+      notePaidSeat(false);
+      expect(getScenarioForModel(id)).toEqual(INCLUDED);
+      resetPaidSeat();
+    }
+  });
+
+  it("meters claude-auto on the paid scenario on Opus 5.5's budget, and nothing else (§46 F112)", () => {
+    notePaidSeat(true);
+    expect(isClaudeAutoPaidModel("claude-auto")).toBe(true);
+    expect(meteredBudgetOf("claude-auto")).toBe("opus");
+    for (const id of ["claude-chat", "claude-container", "claude-fable"]) expect(meteredBudgetOf(id)).toBeNull();
+    notePaidSeat(false);
+    expect(isClaudeAutoPaidModel("claude-auto")).toBe(false);
+    expect(meteredBudgetOf("claude-auto")).toBeNull();
+    process.env.M365_OPUS_FALLBACK_MODEL = "claude-auto";
+    notePaidSeat(true);
+    expect(priorityAccessFallbackModel("opus")).toBeNull(); // metered itself on a premium account
+    delete process.env.M365_OPUS_FALLBACK_MODEL;
+  });
+
+  it("sends their tool requests agent-less, like every Claude tone but Opus; M365_FORCE_AGENT still overrides", () => {
+    for (const [id, tone] of Object.entries(IDS)) {
+      expect(AGENT_CLAUDE_TONES.has(tone)).toBe(false);
+      expect(toneUsesToolAgent(tone)).toBe(false);
+      expect(requestUsesAgent(id, true)).toBe(false);
+      expect(isPremiumOnlyModel(id)).toBe(false);
+    }
+    process.env.M365_FORCE_AGENT = "1";
+    expect(requestUsesAgent("claude-chat", true)).toBe(true);
   });
 });
 

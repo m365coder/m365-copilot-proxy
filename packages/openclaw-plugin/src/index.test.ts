@@ -85,6 +85,12 @@ describe("generateOpenClawConfig", () => {
     // The legacy ID reaches the same route, so it names the model that answers.
     expect(models.find((m) => m.id === "claude-opus-4.5")?.name).toMatch(/^Claude Opus 4\.8/);
   });
+
+  it("names the §46 Claude_* tones after their tones, as chat models", () => {
+    const models = generateOpenClawConfig().models.providers.m365.models;
+    expect(models.find((m) => m.id === "claude-auto")).toMatchObject({ name: "Claude Auto", reasoning: false });
+    expect(models.find((m) => m.id === "claude-fable")).toMatchObject({ name: "Claude Fable", reasoning: false });
+  });
 });
 
 // --- Integration tests against real M365 Copilot via proxy ---

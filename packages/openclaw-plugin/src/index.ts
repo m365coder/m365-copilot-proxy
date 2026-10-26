@@ -68,6 +68,10 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "claude-opus-5": "Claude Opus 5.5",
   "claude-opus-4.8": "Claude Opus 4.8 (premium, unmetered)",
   "claude-opus-4.5": "Claude Opus 4.8 (premium, unmetered)",
+  "claude-auto": "Claude Auto",
+  "claude-chat": "Claude Chat",
+  "claude-container": "Claude Container",
+  "claude-fable": "Claude Fable",
 };
 
 const REASONING_MODELS = new Set([

@@ -263,6 +263,14 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   `PAID_SCENARIO_TONES` — that silently turns `claude-sonnet` into Sonnet 5.5 (and spends its
   budget). `Claude_Sonnet_5` is in that set because nothing maps it for 4.6. A liveness probe can't
   see this (all are `DeepLeo`); only self-ID can. See docs/hypotheses.md §21, §26, #37.
+- **A `Claude_*` tone name doesn't make it Claude (§46).** `Claude_Chat`, `Claude_Container`, `Claude_Fable`,
+  and `Claude_Auto` on the included scenario, behave like the GPT-5.x chat tones (M365's code interpreter in
+  `/mnt/data`, no chain of thought), and give the GPT self-ID that every tone except the Claude models gives.
+  `Claude_Auto` on the paid scenario self-IDs as Opus 5.5, works in `/home/claude` and spends Opus 5.5's
+  budget, so `meteredBudgetOf` maps it to `opus`, and a premium account routes it there. All four go
+  agent-less (the `/^Claude_/` rule) with `relay_echo_first`; with the agent they solved the same at more
+  turns. `claude-auto` on the paid scenario gets `relay_batch` instead, Opus 5.5's default, keyed on the model
+  ID like Sonnet 5.5 (`isClaudeAutoPaidModel`).
 - **Sonnet 5 has its own tools in a remote sandbox (Sonnet 5.5 too) and reads `<system>` tags as an injection.**
   Nothing client-side disables `bash_tool`/`create_file` (`/home/claude`), and a `<system>` block in
   the user turn makes it disregard the framing and work there ("no such file"). Its framings are

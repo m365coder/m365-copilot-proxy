@@ -21,7 +21,7 @@
 // as a property of the CONNECTION, not of the tone.
 //
 // Usage: M365_NO_INTERACTIVE=1 CHROMIUM_PATH=$(which chromium) node scripts/tone-probe.mjs
-// Cost: 1 message per cell. Opus and Sonnet 5.5 cells spend their scarce
+// Cost: 1 message per cell. Opus, Claude_Auto @ paid and Sonnet 5.5 cells spend their scarce
 // priority-access budgets (see docs §15, §26) — drop them from the list when
 // sweeping something else.
 
@@ -89,20 +89,22 @@ const TONES = [
   // budget (40/day, 75/week), so there's no paid cell here.
   { tone: "Gpt_61_Sol_Reasoning", note: "gpt-6.1-sol — included scenario: expect DeepLeo on every account", ...INCLUDED },
 
-  // Claude_Fable: present in the real web client's tone list (§12.6 decompile)
-  // alongside Claude_Sonnet, so it is a registered route rather than a guess.
-  // It is accepted here and answers — but it self-identifies as GPT-5, not as
-  // Fable, which is the same "answers, therefore it works" trap §12.15 warns
-  // about one level up: the tone resolves to *a* model, just not the named one.
-  // Best current reading is that the real Fable route is gated on the Frontier
-  // program and an unentitled account is quietly served a model that
-  // self-identifies as GPT-5. That
-  // is why Fable is deliberately NOT in MODEL_TONES — advertising it would ship
-  // a model ID that lies about what answers. Probed on both entitlements to see
-  // whether the paid scenario is the gate (as it is for Opus) or whether the
-  // gate is program membership, which no scenario string can fake.
-  { tone: "Claude_Fable", note: "self-IDs as GPT-5, not Fable — likely Frontier-gated", ...INCLUDED },
-  { tone: "Claude_Fable", note: "PAID scenario: does the entitlement move it?", ...PAID },
+  // The §46 Claude_* tones. Claude_Fable is in the real web client's tone list
+  // (§12.6 decompile) alongside Claude_Sonnet; it, Claude_Chat and
+  // Claude_Container give the GPT self-ID that every tone except the Claude
+  // models gives, and behave like the GPT-5.x chat tones on both scenarios. As
+  // §12.15 warns, an answer shows only that *a* model answered, not the one the
+  // tone is named for. They are mapped under their tones' names anyway
+  // (claude-fable etc.), because they drive a coding loop. Claude_Auto behaves
+  // differently on each scenario: like the GPT chat tones on the included one,
+  // and on the paid one it self-IDs as Opus 5.5 and spends Opus 5.5's priority
+  // access, so its paid cell costs an Opus turn.
+  { tone: "Claude_Fable", note: "claude-fable — self-IDs as GPT, not Fable", ...INCLUDED },
+  { tone: "Claude_Fable", note: "claude-fable — PAID scenario (premium account)", ...PAID },
+  { tone: "Claude_Chat", note: "claude-chat — self-IDs as GPT", ...INCLUDED },
+  { tone: "Claude_Container", note: "claude-container — self-IDs as GPT", ...INCLUDED },
+  { tone: "Claude_Auto", note: "claude-auto — included: GPT-like", ...INCLUDED },
+  { tone: "Claude_Auto", note: "claude-auto — PAID: self-IDs as Opus 5.5, spends Opus priority access", ...PAID },
 
   { tone: "Definitely_Not_A_Real_Tone_XYZ", note: "CONTROL: invalid" },
 ];

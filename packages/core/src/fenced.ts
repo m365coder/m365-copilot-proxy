@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createLogger } from "./log.js";
-import { getToneForModel, isSonnet55Model } from "./copilot.js";
+import { getToneForModel, isClaudeAutoPaidModel, isSonnet55Model } from "./copilot.js";
 import type { ParsedToolCall, ToolDef } from "./tools.js";
 
 const log = createLogger("fenced");
@@ -422,6 +422,16 @@ const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
   "Claude_Sonnet_Reasoning",
 ]);
 
+// Tones on relay_echo_first: `Gpt_5_6_Chat` (docs §41, §43) and the four
+// `Claude_*` tones of §46; see defaultFramingForTone.
+const RELAY_ECHO_FIRST_TONES: ReadonlySet<string> = new Set([
+  "Gpt_5_6_Chat",
+  "Claude_Auto",
+  "Claude_Chat",
+  "Claude_Container",
+  "Claude_Fable",
+]);
+
 // Tones on relay_onepass_first (docs §44); Sonnet 5 and 5.5 have their own
 // constants, below.
 const RELAY_ONEPASS_FIRST_TONES: ReadonlySet<string> = new Set([
@@ -513,6 +523,16 @@ const RELAY_ONEPASS_FIRST_TONES: ReadonlySet<string> = new Set([
  *  checks, kept 20/20 at 12% fewer turns (2.65 vs 3.00 per run, p = 0.003; paid
  *  scenario 10/10).
  *
+ *  `Claude_Auto`, `Claude_Chat`, `Claude_Container` and `Claude_Fable` (docs §46)
+ *  default to relay_echo_first. Agent-less on the included scenario, `baseline`
+ *  solved 0–4/10, working in M365's code interpreter or tripping the JailBreak
+ *  Classifier; relay_batch, relay_echo_first and relay_onepass_first 9–10/10 at
+ *  1.9–2.2 turns per task. In real pi relay_echo_first took 23–31% fewer turns
+ *  than relay_batch (2.5–2.7 vs 3.5–3.6 per run, p < 0.001, 10/10 each) and tied
+ *  relay_onepass_first (2.77 per run each over 30 runs); bench turns broke the
+ *  tie. `claude-auto` on a premium account (the paid scenario, where it
+ *  self-IDs as Opus 5.5) has relay_batch instead (CLAUDE_AUTO_PAID_FRAMING).
+ *
  *  `Gpt_5_2_Auto`, `Gpt_5_3_Auto` and `Gpt_5_4_Auto` (docs §44) default to
  *  relay_onepass_first. With the tool agent on the included scenario, `baseline`
  *  solved 8–9/10, its misses mostly the JailBreak Classifier's refusals;
@@ -524,7 +544,7 @@ const RELAY_ONEPASS_FIRST_TONES: ReadonlySet<string> = new Set([
  *  Every other tone keeps the bench-tuned `baseline` byte-for-byte. */
 export function defaultFramingForTone(tone?: string): string | undefined {
   if (tone && RELAY_BATCH_TONES.has(tone)) return "relay_batch";
-  if (tone === "Gpt_5_6_Chat") return "relay_echo_first";
+  if (tone && RELAY_ECHO_FIRST_TONES.has(tone)) return "relay_echo_first";
   if (tone && RELAY_ONEPASS_FIRST_TONES.has(tone)) return "relay_onepass_first";
   if (tone === "Claude_Opus") return "relay_batch";
   if (tone === "Claude_Sonnet") return "relay_batch";
@@ -538,9 +558,11 @@ export function defaultFramingForTone(tone?: string): string | undefined {
 /** The framing a MODEL ID should default to. Differs from defaultFramingForTone
  *  only where one tone serves two models: `Claude_Sonnet` is Sonnet 4.6 on the
  *  included scenario and Sonnet 5.5 on the paid one, so a Sonnet-5.5-only
- *  framing has to key on the model ID (see SONNET_5_5_DEFAULT_FRAMING). */
+ *  framing has to key on the model ID (see SONNET_5_5_DEFAULT_FRAMING); and
+ *  `Claude_Auto` on the paid scenario (CLAUDE_AUTO_PAID_FRAMING). */
 export function defaultFramingForModel(model: string): string | undefined {
   if (isSonnet55Model(model)) return SONNET_5_5_DEFAULT_FRAMING;
+  if (isClaudeAutoPaidModel(model)) return CLAUDE_AUTO_PAID_FRAMING;
   return defaultFramingForTone(getToneForModel(model));
 }
 
@@ -565,6 +587,15 @@ const SONNET_5_DEFAULT_FRAMING = "relay_onepass_first";
 // 3.70 per run, 10/10 each, p = 0.0017). It has Sonnet 5's `/home/claude`
 // sandbox (§26), which the user-voice note names as the wrong machine.
 const SONNET_5_5_DEFAULT_FRAMING = "relay_onepass_first";
+
+// `claude-auto` on the paid scenario (a premium account), which self-IDs as
+// Claude Opus 5.5, works in `/home/claude` and spends Opus 5.5's budget (docs §46
+// F112), has relay_batch, Opus 5.5's own default (`Claude_Opus`): its one bench
+// arm there, agent-less, solved 10/10 at 2.2 turns per task, one of them a
+// sandbox turn. It was not run against relay_echo_first, the tone's default on
+// the included scenario, nor in real pi: every turn costs a unit of the 40-a-day
+// budget (docs §46 H46a).
+const CLAUDE_AUTO_PAID_FRAMING = "relay_batch";
 
 /** How formatMessages wraps the framing block and the harness's own system
  *  messages. Historically both went in `<system>` tags. Claude Sonnet 5 reads a

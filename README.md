@@ -326,6 +326,8 @@ without NixOS: `nix run github:cramt/m365-copilot-proxy -- 4141`.
 | `claude-sonnet-think-deeper` | Claude_Sonnet_Reasoning | Named for Claude, but since October 2026 it identifies itself as GPT-5.6 / GPT-5.5. `relay_batch`: 19/20 on the bench (`baseline` 4/20), 10/10 driving real pi |
 | `claude-opus` / `claude-opus-5.5` | Claude_Opus (paid scenario) | Claude Opus 5.5. **Needs a paid/premium Copilot seat** and has a small separate quota: 40 turns a day (see below). 10/10 on the bench with `relay`; defaults to `relay_batch`. `claude-opus-5` is kept as an alias |
 | `claude-opus-4.8` | Claude_Opus (included scenario) | Claude Opus 4.8. **Premium accounts only**, but **no** priority-access quota. With its default `relay_batch` framing and the tool agent: 30/30 on the bench at 2.5 turns per task, 10/10 driving real pi. `claude-opus-4.5` is kept as an alias (it was Opus 4.5 until October 2026) |
+| `claude-auto` | Claude_Auto | **On a premium account it identifies itself as Claude Opus 5.5 and spends Opus 5.5's quota** (the paid scenario: 40 turns a day, 75 a week, shared with `claude-opus`; see below). On any other account it behaves like the GPT chat models. Defaults to `relay_echo_first` there (10/10 on the bench and driving real pi), and on a premium account to `relay_batch`, Opus 5.5's default (10/10 on the bench; not yet driven through real pi) |
+| `claude-chat` / `claude-container` / `claude-fable` | Claude_Chat / Claude_Container / Claude_Fable | Named for Claude, but they behave like the GPT chat models on every account. Default to `relay_echo_first`: 10/10 each on the bench and driving real pi, and 10/10 each driving real pi on a premium account |
 | `gpt-5.4` / `gpt-5.4-quick` | Gpt_5_4_* | GPT-5.4 (bare `gpt-5.4` is the reasoning tone). `relay_batch`: 20/20 and 18/20 on the bench, 10/10 each driving real pi |
 | `gpt-5.3` / `gpt-5.3-think-deeper` | Gpt_5_3_* | GPT-5.3. `relay_batch`: 18/20 and 20/20 on the bench, 10/10 each driving real pi |
 | `gpt-5.2` / `gpt-5.2-think-deeper` | Gpt_5_2_* | GPT-5.2. `relay_batch`: 20/20 each on the bench, 10/10 each driving real pi |
@@ -529,6 +531,11 @@ whatever its size**. In an agent loop every tool call is a turn, so one coding t
 day's budget is gone after about ten tasks. That's what [issue #18](https://github.com/cramt/m365-copilot-proxy/issues/18)
 ran into; a shorter prompt doesn't help. Both budgets reset at **midnight UTC**, the weekly one on Monday.
 
+**`claude-auto` shares it on a premium account.** There it reaches a model that identifies itself as
+Opus 5.5, and every turn takes one from the same allowances, so the proxy meters it as Opus: the same
+`usage` fields, the same 429, the same `M365_OPUS_FALLBACK_MODEL`, and once either model ID uses the budget
+up, the proxy refuses both until the reset (hypotheses §46).
+
 What the proxy does about it:
 - **Shows the budget:** every `claude-opus` response carries `usage.x_m365_opus_daily_remaining` and
   `usage.x_m365_opus_weekly_remaining`.
@@ -652,7 +659,7 @@ Three token scopes are acquired:
 | `M365_INTERACTIVE_TIMEOUT_MS` | How long to wait for you to finish the interactive sign-in (default `600000`, i.e. 10 minutes). |
 | `M365_LOGIN_LOCALE` / `M365_LOGIN_TIMEZONE` | Browser locale and timezone presented during login (defaults `en-GB` / `Europe/Copenhagen`). These are part of the anti-bot-scoring fingerprint ([§11 F25](docs/hypotheses.md)) — set them to match your own machine if AAD starts treating your automated login as a bot. |
 | `M365_FORCE_AGENT` | Override which tool requests carry the Copilot Studio tool agent. `1` attaches it to every tool request (and turns off the GPT-6 Sol fallback below); `0` never attaches it, to tool-less requests either. Unset, the proxy decides per model: GPT-5.x, `m365-copilot`, `gpt-6-sol` and both Opus models take it, the other Claude models and `gpt-6-think-deeper` don't, and `gpt-6.1-sol` takes it only on a premium account, which the proxy learns from the first request. A tool-less request goes without it, except on a model whose agent-less route the proxy found dead (`gpt-6-sol` on a non-premium account). On a non-premium account `0` saves `gpt-6.1-sol`'s probe turn (~3 s) per proxy start. |
-| `M365_OPUS_FALLBACK_MODEL` | Model to serve `claude-opus` (Opus 5.5) requests with once its priority-access budget is used up, instead of returning a 429 — typically `claude-opus-4.8`, which isn't metered (premium accounts only). Applies until the budget resets; the response's `model` field names the model that answered. Unset by default. |
+| `M365_OPUS_FALLBACK_MODEL` | Model to serve `claude-opus` (Opus 5.5) requests, and `claude-auto` ones on a premium account, with once its priority-access budget is used up, instead of returning a 429 — typically `claude-opus-4.8`, which isn't metered (premium accounts only). Applies until the budget resets; the response's `model` field names the model that answered. Unset by default. |
 | `M365_SONNET_FALLBACK_MODEL` | The same for Sonnet 5.5 (`claude-sonnet-5.5`, and `claude-sonnet` on a premium account) once its priority-access budget is used up — e.g. `claude-sonnet-5` (unmetered) or `claude-sonnet-4.6` (Sonnet 4.6, any account). A fallback naming a metered model is ignored. Unset by default. |
 | `M365_GPT61_SOL_FALLBACK_MODEL` | The same for `gpt-6.1-sol` on the paid scenario (a premium account) once its GPT-6.1 Sol budget is used up — typically `gpt-6.1-sol-included`, the same model on the included scenario, unmetered. Unset by default. |
 | `M365_PAID_SEAT` | Whether this account has a paid (premium) Microsoft 365 Copilot seat: `1` or `0`. Unset, the proxy finds out from the first request that prefers the paid scenario (a licence refusal means no seat) and remembers it for the process; setting it skips that probe turn. |
@@ -727,7 +734,7 @@ pnpm run test:live    # Run live integration tests against M365
 - Tool calling is emulated (prompt injection + a Copilot Studio agent), not native function calling — robust with the agent, unreliable without it
 - The `think-deeper` / `*_Reasoning` models take 10-30s per response
 - Hard quota of ~600 messages **per conversation** (mitigated by session reuse + delta sends)
-- `claude-opus` needs a paid/premium seat and has its own small priority-access quota (40 turns a day, 75 a week; every tool call is a turn) that resets at midnight UTC (weekly on Monday); exhaustion surfaces as a 429, or as a switch to `M365_OPUS_FALLBACK_MODEL`. `claude-opus-4.8` needs a premium account too, but has no such quota
+- `claude-opus` needs a paid/premium seat and has its own small priority-access quota (40 turns a day, 75 a week; every tool call is a turn) that resets at midnight UTC (weekly on Monday); exhaustion surfaces as a 429, or as a switch to `M365_OPUS_FALLBACK_MODEL`. `claude-auto` on a premium account spends the same quota. `claude-opus-4.8` needs a premium account too, but has no such quota
 - `claude-sonnet-5.5` needs a paid/premium seat and has a priority-access quota of its own (80 turns a day, 150 a week), handled the same way (`M365_SONNET_FALLBACK_MODEL`); so does `claude-sonnet` on a premium account, where it is Sonnet 5.5. `claude-sonnet-5` needs the seat but has no quota
 - `gpt-6.1-sol` on a premium account spends a GPT-6.1 Sol quota (40 turns a day, 75 a week; `M365_GPT61_SOL_FALLBACK_MODEL`); `gpt-6.1-sol-included` doesn't
 - Streaming: **tool-less** responses stream incrementally (deltas forwarded as they arrive). **Tool-calling** turns are still buffered server-side — the raw text has to be parsed for tool-call fences before it can be emitted — so those arrive as a single chunk at the end (with an immediate HTTP 200 + heartbeats so the client never times out waiting)

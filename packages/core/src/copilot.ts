@@ -75,6 +75,30 @@ const MODEL_TONES: Record<string, string> = {
   "claude-opus-4.8": "Claude_Opus",
   "claude-opus-4.5": "Claude_Opus",
 
+  // Four more `Claude_*` tones the validator accepts (docs §46). Named for
+  // Claude, but on the included scenario none of them behaves like it: each
+  // runs code in M365's code interpreter (`/mnt/data`, not a sandbox of its
+  // own) and streams no chain of thought, like the GPT-5.x chat tones, and
+  // gives the GPT self-ID that every tone except the Claude models gives.
+  // They serve with and without the tool agent on every account, go
+  // agent-less like every `Claude_*` tone but Opus, and default to
+  // relay_echo_first (fenced.ts), except `Claude_Auto` on the paid scenario.
+  //
+  // `Claude_Auto` on the paid scenario is the exception: it self-IDs as Claude
+  // Opus 5.5, works in `/home/claude` like Sonnet 5 and streams
+  // ChainOfThoughtSummary, and every turn spends Opus 5.5's priority-access
+  // budget (meteredBudgetOf). A premium account routes it there (§41), so
+  // `claude-auto` is what self-IDs as Opus 5.5 on a premium account, metered,
+  // and the GPT-like included route elsewhere — the way `claude-sonnet` is
+  // Sonnet 5.5 or 4.6.
+  "claude-auto": "Claude_Auto",
+  "claude-chat": "Claude_Chat",
+  "claude-container": "Claude_Container",
+  // In the web client's tone list next to `Claude_Sonnet` (docs §12.6). Its
+  // GPT self-ID kept it unmapped until §46, which found it behaves like the
+  // GPT chat tones on every account and scenario probed.
+  "claude-fable": "Claude_Fable",
+
   // GPT-5.5 (current generation)
   "gpt-5.5": "Gpt_5_5_Chat",
   "gpt-5.5-quick": "Gpt_5_5_Chat",
@@ -286,6 +310,16 @@ const INCLUDED_SONNET_PATTERN = /sonnet[-_ ]?4[-_. ][56](?!\d)/i;
 /** True when this ID asks for the included scenario's Sonnet (Sonnet 4.6). */
 export function isIncludedSonnetModel(model: string): boolean {
   return getToneForModel(model) === "Claude_Sonnet" && INCLUDED_SONNET_PATTERN.test(model);
+}
+
+/**
+ * True when this request goes to `Claude_Auto` on the paid scenario
+ * (`claude-auto` on a premium account): the route that self-IDs as Claude Opus
+ * 5.5 and spends Opus 5.5's budget (docs §46 F112). The included scenario's
+ * `Claude_Auto` behaves like the GPT chat tones.
+ */
+export function isClaudeAutoPaidModel(model: string): boolean {
+  return getToneForModel(model) === "Claude_Auto" && usesPaidScenario(model);
 }
 
 /** True when this model ID is Claude Sonnet 5, i.e. the `Claude_Sonnet_5` tone. */
@@ -628,12 +662,14 @@ export function usesPaidScenario(model: string): boolean {
  * The priority-access budget this model's turns draw on, or null when it isn't
  * metered: Opus on the paid scenario (Opus 5.5) and `Claude_Sonnet` on the paid
  * scenario (Sonnet 5.5). Opus 4.8, Sonnet 4.6 and Sonnet 5 aren't metered.
+ * `Claude_Auto` on the paid scenario spends Opus 5.5's budget, one unit a turn
+ * (docs §46 F112), so the proxy handles its exhaustion and fallback as Opus's.
  * Follows the scenario the request will really use, `M365_SCENARIO` included.
  */
 export function meteredBudgetOf(model: string): MeteredBudget | null {
   if (!usesPaidScenario(model)) return null;
   const tone = getToneForModel(model);
-  if (tone === "Claude_Opus") return "opus";
+  if (tone === "Claude_Opus" || tone === "Claude_Auto") return "opus";
   if (tone === "Claude_Sonnet") return "sonnet-5.5";
   if (tone === "Gpt_61_Sol_Reasoning") return "gpt-6.1-sol";
   return null;

@@ -42,6 +42,7 @@ export {
   getScenarioForModel,
   isSonnet5Model,
   isSonnet55Model,
+  isClaudeAutoPaidModel,
   isIncludedOpusModel,
   isIncludedSonnetModel,
   toneUsesToolAgent,
