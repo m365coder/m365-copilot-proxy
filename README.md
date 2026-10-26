@@ -319,9 +319,9 @@ without NixOS: `nix run github:cramt/m365-copilot-proxy -- 4141`.
 | `m365-copilot` / `auto` | magic | Auto-routing. `relay_batch`: 18/20 on the bench (`baseline` 8/20), 10/10 driving real pi |
 | `quick` | Gpt_5_5_Chat | Alias of `gpt-5.5` (its old `Gpt_Quick` tone was retired — see below) |
 | `think-deeper` | Gpt_5_5_Reasoning | Alias of `gpt-5.5-think-deeper` (its old `Gpt_Reasoning` tone was retired) |
-| `claude` / `claude-sonnet` | Claude_Sonnet | **Claude Sonnet 5.5 on a premium account** (the paid scenario, with Sonnet 5.5's quota and `relay_batch` framing, as `claude-sonnet-5.5` below), Claude Sonnet 4.6 on any other. Use `claude-sonnet-4.6` to stay on Sonnet 4.6 |
+| `claude` / `claude-sonnet` | Claude_Sonnet | **Claude Sonnet 5.5 on a premium account** (the paid scenario, with Sonnet 5.5's quota and `relay_onepass_first` framing, as `claude-sonnet-5.5` below), Claude Sonnet 4.6 on any other. Use `claude-sonnet-4.6` to stay on Sonnet 4.6 |
 | `claude-sonnet-4.6` | Claude_Sonnet (included scenario) | Real Anthropic Claude Sonnet 4.6 on every account, no quota (agent-less path) — 78/90 on the bench with the `relay` framing (47/76 with `baseline`). Defaults to `relay_batch`: 40/40, and 21% fewer turns driving real pi (20/20). `claude-sonnet-4.5` is kept as an alias |
-| `claude-sonnet-5.5` | Claude_Sonnet (paid scenario) | Claude Sonnet 5.5. **Needs a paid/premium Copilot seat** — same tone as above, the scenario picks the model — and has a separate quota: 80 turns a day, 150 a week (see below). Defaults to `relay_batch`: 10/10 on the bench and 10/10 driving real pi, at 28% fewer turns than `relay`, which the quota counts (see below) |
+| `claude-sonnet-5.5` | Claude_Sonnet (paid scenario) | Claude Sonnet 5.5. **Needs a paid/premium Copilot seat** — same tone as above, the scenario picks the model — and has a separate quota: 80 turns a day, 150 a week (see below). Defaults to `relay_onepass_first`, as Sonnet 5 does: 10/10 driving real pi at 30% fewer turns than `relay_batch`, which took 28% fewer than `relay`; the quota counts turns (see below) |
 | `claude-sonnet-5` | Claude_Sonnet_5 (paid scenario) | Claude Sonnet 5. **Needs a paid/premium Copilot seat**; no separate quota. 27/30 on the bench with the `relay` framing (6/40 with `baseline`). Defaults to `relay_onepass_first`: 10/10 driving real pi at 3.2 turns per run against `relay`'s 4.9 (see below) |
 | `claude-sonnet-think-deeper` | Claude_Sonnet_Reasoning | Named for Claude, but since October 2026 it identifies itself as GPT-5.6 / GPT-5.5. `relay_batch`: 19/20 on the bench (`baseline` 4/20), 10/10 driving real pi |
 | `claude-opus` / `claude-opus-5.5` | Claude_Opus (paid scenario) | Claude Opus 5.5. **Needs a paid/premium Copilot seat** and has a small separate quota: 40 turns a day (see below). 10/10 on the bench with `relay`; defaults to `relay_batch`. `claude-opus-5` is kept as an alias |
@@ -492,12 +492,13 @@ terminal one command at a time, which also tells it the sandbox is the wrong mac
 scores **27/30** on the bench (from 5/30) and solved **5/5** fix-bug runs through real pi. Sonnet 4.6 beat
 `baseline` with it too (78/90 vs 47/76), and now defaults to `relay_batch`, the same note asking it to put
 as much as it can into each block: same solves, 21% fewer turns through real pi (39/39). Sonnet 5.5, whose
-quota counts turns, defaults to `relay_batch` too: driving real pi it solved 10/10 under either framing,
-at 3.4 turns per run against `relay`'s 4.7 (hypotheses §42), so a day's 80 turns go about 40% further.
-Sonnet 5 batched only 6–8% under `relay_batch`, because it still read, ran pi's `edit` tool, ran the check
-and replied in separate turns. Its default is `relay_onepass_first`, which asks, after the task, for one
-bash block that reads, makes the change and runs the check: 10/10 in real pi at 3.2 turns per run against
-`relay`'s 4.9, and 10/10 on the bench (hypotheses §43).
+quota counts turns, moved to `relay_batch` first: driving real pi it solved 10/10 under either framing, at
+3.4 turns per run against `relay`'s 4.7 (hypotheses §42). Sonnet 5 batched only 6–8% under `relay_batch`,
+because it still read, ran pi's `edit` tool, ran the check and replied in separate turns. Both now default
+to `relay_onepass_first`, which asks, after the task, for one bash block that reads, makes the change and
+runs the check. Sonnet 5: 10/10 in real pi at 3.2 turns per run against `relay`'s 4.9, and 10/10 on the
+bench. Sonnet 5.5: 10/10 in real pi at 2.6 against `relay_batch`'s 3.7, so a day's 80 turns go about 40%
+further again (hypotheses §43).
 Override with `M365_FRAMING_VARIANT` as usual. Details: hypotheses §21, §25, §26.
 
 ### Opus (`claude-opus`, `claude-opus-4.8`) — two models, one with a small quota

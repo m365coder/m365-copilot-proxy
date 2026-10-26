@@ -451,8 +451,8 @@ const RELAY_BATCH_TONES: ReadonlySet<string> = new Set([
  *  (docs §21). `Claude_Sonnet` defaults to relay_batch, for Sonnet 4.6: same
  *  solves, 14% fewer turns on the bench (80/80) and 21% fewer in real pi
  *  (39/39), and every pi edit still followed a read (docs §25 F61, F62).
- *  Sonnet 5 gets relay_onepass_first instead (SONNET_5_DEFAULT_FRAMING), and
- *  Sonnet 5.5 relay_batch, benched on its own (SONNET_5_5_DEFAULT_FRAMING).
+ *  Sonnet 5 and Sonnet 5.5 get relay_onepass_first instead, each benched on
+ *  its own (SONNET_5_DEFAULT_FRAMING, SONNET_5_5_DEFAULT_FRAMING).
  *
  *  `Gpt_6_Reasoning` defaults to relay_batch. It used to keep `baseline` on the
  *  theory that it drives M365's GPT agent path — but it never served WITH the
@@ -542,11 +542,12 @@ export function defaultFramingForModel(model: string): string | undefined {
 const SONNET_5_DEFAULT_FRAMING = "relay_onepass_first";
 
 // Sonnet 5.5 — `claude-sonnet-5.5`, and `claude-sonnet` on a premium account —
-// defaults to `relay_batch` (docs §42 F105, H26b). Its budget counts turns, like
-// Opus 5.5's, and batching cut them by 31% on the bench and 28% in real pi (3.40
-// vs 4.70 per run, 10/10 each, p < 0.001). It has Sonnet 5's `/home/claude`
+// defaults to `relay_onepass_first` too (docs §43 F108). Its budget counts turns,
+// like Opus 5.5's: relay_batch cut them by 28% in real pi (§42 F105, H26b), and
+// relay_onepass_first by another 30% against relay_batch, head to head (2.60 vs
+// 3.70 per run, 10/10 each, p = 0.0017). It has Sonnet 5's `/home/claude`
 // sandbox (§26), which the user-voice note names as the wrong machine.
-const SONNET_5_5_DEFAULT_FRAMING = "relay_batch";
+const SONNET_5_5_DEFAULT_FRAMING = "relay_onepass_first";
 
 /** How formatMessages wraps the framing block and the harness's own system
  *  messages. Historically both went in `<system>` tags. Claude Sonnet 5 reads a

@@ -6216,3 +6216,29 @@ per run (fix-bug 2,2,2,2,2; multi 3,3,3,3,3). That completes H43a: **`gpt-5.6` d
 `relay_echo_first`**. Sonnet 5 under `relay_onepass_first`, the bench on the premium account (paid scenario,
 agent-less): 10/10 at 2.40 turns per task against `relay`'s 3.40 (F106), 4 sandbox turns against 3. That
 completes H43b: **`claude-sonnet-5` defaults to `relay_onepass_first`**.
+
+### F108 — Sonnet 5.5 takes one pass too: `relay_onepass_first` cuts its real-pi turns 30% on `relay_batch`'s → its default 🟢 (H43c)
+
+Premium account, `claude-sonnet` as shipped (no scenario or seat override), real pi fix-bug + multi, 5 + 5
+per arm, confab retry off, Oct 26 00:02–00:29Z, after the 00:00Z reset; the arms ran `relay_batch` fix-bug,
+`relay_onepass_first` fix-bug, `relay_onepass_first` multi, `relay_batch` multi. All 63 turns went to
+`Claude_Sonnet` on the paid scenario (`OfficeWebPaidCopilot`), agent-less; the day's Sonnet 5.5 budget fell
+from 80 to 17, and no run reached the wall.
+
+| | real pi | turns per run | sandbox turns |
+|---|---|---|---|
+| `relay_batch` (the default) | 10/10 | 3.70 (fix-bug 4,3,4,3,4; multi 3,4,4,5,3) | 2 |
+| `relay_onepass_first` | 10/10 | 2.60 (fix-bug 3,2,2,2,2; multi 3,3,3,3,3) | 0 |
+
+- **By H43c's rule** (H42a's): solves ≥ `relay_batch`'s − 1 and ≥ 9/10 ✓; turns per run −30%,
+  task-stratified permutation p = 0.0017 ✓; sandbox + Disengaged + jailbreak turns 2 → 0 ✓ (no Disengaged or
+  jailbreak turn in either arm). **Shipped:** `SONNET_5_5_DEFAULT_FRAMING = relay_onepass_first`, for
+  `claude-sonnet-5.5` and for `claude-sonnet` on a premium account. On an 80-turn day that is ~30 real-pi
+  tasks instead of ~22.
+- The same shape as Sonnet 5 and GPT-5.6 Chat in F107: on fix-bug 4 of 5 runs read, fixed and checked in the
+  first block (2 turns); on multi every run read first (each `.py` file with `cat -n`, and a run of
+  `test.py`), then fixed with `sed -i` and checked in one block, then replied.
+- `relay_batch` took 3.70 turns per run here against 3.40 in F105, on the same account and tasks; the −30%
+  is head to head, within one sweep.
+- Not run: a bench arm (H43c is real pi only). Open: does Sonnet 4.6 (`claude-sonnet-4.6`, still on
+  `relay_batch`) take one pass too?

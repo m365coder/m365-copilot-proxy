@@ -84,10 +84,11 @@ but "on which machine" — and our framing decides that. Conclusive (hyp §21, p
   agent-less already solves 193/200, so `Claude_Sonnet` and `Claude_Sonnet_5` stay agent-less.
 - **Whether batching pays is per model, and only real pi says.** `relay_batch` (relay, plus "put as
   much as you can into one block") cut Sonnet 4.6's pi turns 21% and Sonnet 5.5's 28% (4.70 → 3.40 per
-  run, 10/10 each, p < 0.001; its budget counts turns), so both default to it. Sonnet 5 saves 6–8% in
+  run, 10/10 each, p < 0.001; its budget counts turns), so both went to it. Sonnet 5 saves 6–8% in
   pi (twice, p ≥ 0.25) though its bench drops 9–15%: it reads, runs pi's `edit` tool, runs the check and
   replies in separate turns. Asking it, after the task, for one bash block that reads, changes and checks
-  (`relay_onepass_first`) took it from 4.9 to 3.2 turns per run at 10/10, its default now (hyp §43).
+  (`relay_onepass_first`) took it from 4.9 to 3.2 turns per run at 10/10, and Sonnet 5.5 from 3.7 to 2.6
+  against `relay_batch` (10/10 each): both default to it now; Sonnet 4.6 keeps `relay_batch` (hyp §43).
 
 ## GPT-6 / GPT-6 Sol: `relay` is not just a Claude fix
 
@@ -138,10 +139,11 @@ real pi on both scenarios (F103). **Lesson:** when a model drops its framing mid
 failing turn actually carries before rewording the first message.
 
 **And the first turn has a "last thing read" too.** The same one-pass request ("read, fix and check in one
-block") moved little in the first message and a lot when it came again after the task (`firstNote`, hyp §43
-F107): GPT-5.6 Chat's turns −12% (`relay_echo_first`, 30/30, its default now), Sonnet 5's −35%
-(`relay_onepass_first`, 10/10, its default). **Lesson:** a request the model weighs against its own habits
-(GPT-5.6 reads before it writes) belongs at the end of the turn, not the top of the framing.
+block") moved little in the first message and a lot when it came again after the task (`firstNote`, hyp
+§43 F107): GPT-5.6 Chat's turns −12% (`relay_echo_first`, 30/30, its default now), Sonnet 5's −35% and
+Sonnet 5.5's −30% (`relay_onepass_first`, 10/10 each, their default). **Lesson:** a request the model
+weighs against its own habits (GPT-5.6 reads before it writes) belongs at the end of the turn, not the top
+of the framing.
 
 ## Claude Opus: when every framing solves, count the Disengages
 
@@ -238,15 +240,15 @@ the transcript's **tags** (`transcriptStyleForVariant`): the Claude Sonnet set n
 the harness's own system prompt becomes `<harness_system_prompt>`.
 
 **The default is model-aware** (`defaultFramingForModel`, falling back to `defaultFramingForTone`).
-`Claude_Opus` (Opus 4.8 and 5.5), `Claude_Sonnet` (Sonnet 4.6, and Sonnet 5.5 on the paid scenario,
-which a premium account uses: hyp §42), `Gpt_6_Reasoning`, `Gpt_6_Sol_Reasoning` (hyp §28),
-`Gpt_61_Sol_Reasoning` (GPT-6.1 Sol, hyp §27), every GPT-5.x tone except GPT-5.6 Chat, `magic` and
-`claude-sonnet-think-deeper` (hyp §40, §41) → `relay_batch`; GPT-5.6 Chat → `relay_echo_first` (hyp §41,
-§43); Sonnet 5 (`claude-sonnet-5`, its own `Claude_Sonnet_5` tone since 2026-10-06) → `relay_onepass_first`
-(hyp §43). Sonnet 5.5 is keyed on
-what the request is served (`isSonnet55Model`), since one tone is two models. `M365_FRAMING_*` still wins. Opus used to default to `minimal`, to spend less of its priority-access
-budget by sending a shorter prompt; that budget counts turns, not tokens (docs/hypotheses.md §24
-F55), so it saved nothing — see the Opus section below for why relay_batch replaced it.
+`Claude_Opus` (Opus 4.8 and 5.5), `Claude_Sonnet` (Sonnet 4.6), `Gpt_6_Reasoning`, `Gpt_6_Sol_Reasoning`
+(hyp §28), `Gpt_61_Sol_Reasoning` (GPT-6.1 Sol, hyp §27), every GPT-5.x tone except GPT-5.6 Chat, `magic`
+and `claude-sonnet-think-deeper` (hyp §40, §41) → `relay_batch`; GPT-5.6 Chat → `relay_echo_first` (hyp
+§41, §43); Sonnet 5 (`claude-sonnet-5`, its own `Claude_Sonnet_5` tone since 2026-10-06) and Sonnet 5.5
+(`Claude_Sonnet` on the paid scenario, which a premium account uses) → `relay_onepass_first` (hyp §43).
+Sonnet 5.5 is keyed on what the request is served (`isSonnet55Model`), since one tone is two models.
+`M365_FRAMING_*` still wins. Opus used to default to `minimal`, to spend less of its priority-access
+budget by sending a shorter prompt; that budget counts turns, not tokens (docs/hypotheses.md §24 F55), so
+it saved nothing — see the Opus section below for why relay_batch replaced it.
 
 **Run a sweep** (persistent proxy + control file; sequential, generously spaced):
 

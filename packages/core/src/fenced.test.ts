@@ -780,9 +780,9 @@ describe("defaultFramingForModel", () => {
     }
   });
 
-  it("gives Sonnet 5.5 relay_batch — its turn-counted budget (§42 F105: −28% turns in real pi)", () => {
+  it("gives Sonnet 5.5 relay_onepass_first — its turn-counted budget (§43 F108: −30% real-pi turns on relay_batch)", () => {
     for (const id of ["claude-sonnet-5.5", "claude-sonnet-5-5-20261001"]) {
-      expect(defaultFramingForModel(id)).toBe("relay_batch");
+      expect(defaultFramingForModel(id)).toBe("relay_onepass_first");
     }
   });
 
@@ -798,10 +798,10 @@ describe("defaultFramingForModel", () => {
     }
   });
 
-  it("gives claude-sonnet Sonnet 5.5's relay_batch where it is Sonnet 5.5: a premium account (docs §41, §42)", () => {
+  it("gives claude-sonnet Sonnet 5.5's relay_onepass_first where it is Sonnet 5.5: a premium account (docs §41, §43)", () => {
     notePaidSeat(true);
     try {
-      for (const id of ["claude-sonnet", "claude"]) expect(defaultFramingForModel(id)).toBe("relay_batch");
+      for (const id of ["claude-sonnet", "claude"]) expect(defaultFramingForModel(id)).toBe("relay_onepass_first");
     } finally {
       resetPaidSeat();
     }

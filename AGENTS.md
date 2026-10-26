@@ -204,9 +204,9 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   `M365_PAID_SEAT=1`/`0` says so up front). A paid-only model gets a 403 there instead of the licence
   text as an answer. The only IDs kept on the included scenario are the ones that exist to stay off a
   priority-access budget: `claude-opus-4.8`, `claude-sonnet-4.6` (and `-4.5`), `gpt-6.1-sol-included`. So
-  `claude-sonnet` is Sonnet 5.5 on a premium account (metered, `relay_batch`) and Sonnet 4.6 elsewhere, and
-  `gpt-6.1-sol` spends its `GPT61Sol*` budget there (`M365_GPT61_SOL_FALLBACK_MODEL`). The framing is
-  re-chosen on that re-send: the included model can be a different one.
+  `claude-sonnet` is Sonnet 5.5 on a premium account (metered, `relay_onepass_first`) and Sonnet 4.6
+  elsewhere, and `gpt-6.1-sol` spends its `GPT61Sol*` budget there (`M365_GPT61_SOL_FALLBACK_MODEL`). The
+  framing is re-chosen on that re-send: the included model can be a different one.
 - **M365 disengages on large tool payloads.** Keep injected toolsets lean. This is why
   pi works and heavy harnesses (opencode) don't. The proxy also enforces one tool call per
   turn and strips M365's invented `{confidence}`/`{final}` JSON (`M365_ALLOW_MULTI_TOOL` to opt out).
@@ -270,14 +270,14 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   (78/90 vs 47/76) and now defaults to `relay_batch` (same solves, −21% turns in real pi, §25 F62);
   batching saved Sonnet 5 only 6–8% in pi (F63, §42 F106), so `SONNET_5_DEFAULT_FRAMING` is
   `relay_onepass_first` instead: one bash block that reads, changes and checks, asked for after the task
-  (−35% pi turns, 10/10, §43 F107) — the one place the Sonnets differ; Sonnet 5.5 (same `/home/claude`
-  sandbox, §26) has its own `SONNET_5_5_DEFAULT_FRAMING`, `relay_batch`: −28% turns in real pi, which its
-  80-a-day budget counts (§42 F105). `relay_batch` and the variants built on it are plain relay
-  when the toolset has no shell, with no `firstNote`: asked for a script it couldn't run, Sonnet 4.6
-  claimed it had only its sandbox tools (§25 H25b) — and `proxy-verify --tools` is shell-less. Don't
-  move `Claude_Sonnet` back to a `<system>`-tagged variant, and don't wrap the note
-  in `<user>` tags either: tags are just text to it, and the variant that did (`relay_inline`,
-  removed) scored 1/20 (§21 F43).
+  (−35% pi turns, 10/10, §43 F107). Sonnet 5.5 (same `/home/claude` sandbox, §26) has its own
+  `SONNET_5_5_DEFAULT_FRAMING`, `relay_onepass_first` too: −30% real-pi turns on `relay_batch`'s, which
+  its 80-a-day budget counts (§43 F108). Only Sonnet 4.6 stays on `relay_batch`. `relay_batch` and the
+  variants built on it are plain relay when the toolset has no shell, with no `firstNote`: asked for a
+  script it couldn't run, Sonnet 4.6 claimed it had only its sandbox tools (§25 H25b) — and
+  `proxy-verify --tools` is shell-less. Don't move `Claude_Sonnet` back to a `<system>`-tagged variant,
+  and don't wrap the note in `<user>` tags either: tags are just text to it, and the variant that did
+  (`relay_inline`, removed) scored 1/20 (§21 F43).
   **Read its `ChainOfThoughtSummary` frames** (`M365_DUMP_FRAMES=1`) — they say why it refused.
 - **Not every tone serves with the tool agent — `toneUsesToolAgent()` decides, per exact tone**
   (`M365_FORCE_AGENT=1`/`0` overrides it either way).
