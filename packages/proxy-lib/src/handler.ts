@@ -51,6 +51,10 @@ import {
   noteRequestOutcome,
   awaitDegradationBackoff,
   awaitTurnBudget,
+  awaitOboPause,
+  budgetConfig,
+  noteOboThrottled,
+  noteOboPathAnswered,
   TurnBudgetHold,
   getImageArtifactToken,
   fetchImageBytes,
@@ -500,6 +504,9 @@ export async function handleChatCompletion(
     let licenceFallbackDone = false;
     let internalErrorFreshRetried = false;
     let originalText = text;
+    // How long this request may wait in all for OboThrottled pauses: as long as
+    // for the turn budget (a streamed request has its keepalive chunks).
+    const oboDeadline = Date.now() + (body.stream ? budgetConfig().maxWaitMin * 60_000 : UNSTREAMED_BUDGET_WAIT_LIMIT_MS);
     // Self-imposed pacing while the account is degraded (thread-rate throttle). A
     // no-op when healthy; during backoff it sleeps a jittered delay so we stop
     // starting fresh turns into the throttle and let it self-heal (H-R1). This
@@ -532,6 +539,8 @@ export async function handleChatCompletion(
         // throttle of about an hour. Every upstream turn passes here, the
         // forcing retries included; run() calls the same wait before its reconnect.
         const waitForBudget = () => awaitTurnBudget({ signal: opts.signal, maxWaitMs: body.stream ? undefined : UNSTREAMED_BUDGET_WAIT_LIMIT_MS });
+        // After an OboThrottled turn this path waits before its next one (docs §45).
+        await awaitOboPause(useToolAgent, { signal: opts.signal, maxWaitMs: Math.max(0, oboDeadline - Date.now()) });
         await waitForBudget();
         // Only attach the tool-calling agent when the request actually has tools.
         // The agent overrides `tone` (forces GPT-5), so tool-less requests must
@@ -604,6 +613,27 @@ export async function handleChatCompletion(
       // used to fall through to the empty-reply path below — two "quick retries"
       // straight back into the throttle, then a 502 blaming a content filter.
       // Fail fast with a 429 instead, and count it toward the degradation backoff.
+      // `OboThrottled` (docs §45) has come only on turns with the tool agent, and on
+      // Oct 26 at agent-turn rates other days had without one, so the turn budget
+      // can't see it coming. With
+      // M365_AVOID_THROTTLING the path pauses (a minute, then doubling, up to
+      // 8 min) and the whole request is re-sent in a fresh conversation once it
+      // may go again, until it answers or the request has waited as long as it
+      // may — then the 429 below. Without it, the 429 at once, as before.
+      if (copilotStream.result?.value === "Throttled" && copilotStream.result.errorCode === "OboThrottled") {
+        const waitMs = noteOboThrottled(useToolAgent);
+        if (budgetConfig().enabled && !copilotStream.hasContent && fullText.length === 0 && Date.now() + waitMs < oboDeadline) {
+          session.newConversation();
+          text = formatMessages(body.messages, body.tools, body.tool_choice, session.conversationId, framingVariant);
+          inputImages = imageUrls(body.messages);
+          originalText = text;
+          log.info(`Upstream Throttled (OboThrottled) — re-sending the whole request in a fresh conversation in ${Math.round(waitMs / 1000)} s`);
+          attempt--;
+          continue;
+        }
+      } else if (copilotStream.hasContent || fullText.length > 0) {
+        noteOboPathAnswered(useToolAgent);
+      }
       if (copilotStream.result?.value === "Throttled") {
         noteRequestOutcome(true, convId);
         log.info(`Upstream Throttled (${copilotStream.result.errorCode ?? "no errorCode"}) — 429, no retry`);
@@ -1252,10 +1282,13 @@ function rateLimitResponse(throttle: { current: number; max: number } | null): R
  *  invented. */
 function throttledResponse(result: { errorCode?: string; message?: string }): Response {
   const scope = result.errorCode ? ` (${result.errorCode})` : "";
+  // OboThrottled (docs §45) came only on turns with the tool agent, and not from our own pace.
+  const why = result.errorCode === "OboThrottled"
+    ? `It came on a turn with the tool agent. M365_AVOID_THROTTLING=1 waits it out.`
+    : `Retrying immediately does not help; it is triggered by starting many new conversations in a short time.`;
   return jsonResponse(429, {
     error: {
-      message: `M365 Copilot throttled this account${scope}: ${result.message ?? "too many requests"} ` +
-        `Retrying immediately does not help; it is triggered by starting many new conversations in a short time.`,
+      message: `M365 Copilot throttled this account${scope}: ${result.message ?? "too many requests"} ${why}`,
       type: "rate_limit_error",
       code: "m365_throttled",
       ...(result.errorCode ? { param: result.errorCode } : {}),
@@ -1275,7 +1308,7 @@ function turnBudgetHoldResponse(hold: TurnBudgetHold): Response {
       error: {
         message: `Not sent to M365 Copilot (M365_AVOID_THROTTLING): ${hold.message}.`,
         type: "rate_limit_error",
-        code: hold.reason === "throttle hold" ? "m365_throttle_hold" : "m365_turn_budget",
+        code: hold.reason === "throttle hold" ? "m365_throttle_hold" : hold.reason === "obo hold" ? "m365_obo_hold" : "m365_turn_budget",
       },
     },
     { "Retry-After": String(retryAfter) },

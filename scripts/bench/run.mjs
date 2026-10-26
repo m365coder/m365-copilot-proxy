@@ -21,6 +21,11 @@
 // It prints "[bench] THROTTLED" and exits 3; the scorecard covers the tasks run.
 // An Opus priority-access 429 (priority_access_exhausted) stops it the same
 // way, as "[bench] PRIORITY ACCESS EXHAUSTED", exit 4.
+// `OboThrottled`, the tool-agent path's own throttle (hypotheses §45), doesn't
+// stop it under M365_AVOID_THROTTLING: the proxy pauses that path and re-sends,
+// but an unstreamed request like the bench's may wait only 2 minutes, so a task
+// that still ends on it is run again from the start after 1, 2, 4, then 8 min
+// (six tries), and only the last try counts.
 //
 // ⚠ Executes MODEL-GENERATED shell in a temp dir (model-driven RCE by design).
 //   Tasks are benign; still, run on a throwaway box if paranoid.
@@ -50,6 +55,11 @@ const THROTTLED = /HTTP 429|m365_throttled/;
 // The Opus priority-access wall is a 429 too, but a different one: it lifts at
 // midnight UTC (weekly: Monday), not after a rest, and only for that model.
 const PRIORITY_EXHAUSTED = /priority_access_exhausted|priority access to/i;
+// The tool-agent path's throttle, as the proxy's 429 names it: the turn's own
+// errorCode, or a request held while the path's pause runs (m365_obo_hold).
+const OBO = /OboThrottled|m365_obo_hold/;
+const OBO_RERUN_S = [60, 120, 240, 480, 480, 480];
+const AVOID = !!process.env.M365_AVOID_THROTTLING && process.env.M365_AVOID_THROTTLING !== "0";
 
 // --- Docker sandbox: model-generated commands run in a --network none container
 // with ONLY the task dir mounted, as the host uid (so file ops stay owner-clean).
@@ -209,7 +219,13 @@ run: for (let rep = 0; rep < REPEAT; rep++) {
   for (const task of tasks) {
     if (rows.length > 0) await new Promise(rr => setTimeout(rr, Math.max(1500, TASK_GAP_MS)));
     await waitForBudget({ need: MAX_TURNS, label: "bench" });
-    const r = await runTask(task);
+    let r = await runTask(task);
+    for (let i = 0; AVOID && r.error && OBO.test(r.error) && i < OBO_RERUN_S.length; i++) {
+      console.log(`  ${r.task.padEnd(14)} OboThrottled — running it again in ${OBO_RERUN_S[i]}s (${i + 1}/${OBO_RERUN_S.length})`);
+      await new Promise((rr) => setTimeout(rr, OBO_RERUN_S[i] * 1000));
+      await waitForBudget({ need: MAX_TURNS, label: "bench" });
+      r = await runTask(task);
+    }
     rows.push({ ...r, rep });
     console.log(`  ${r.task.padEnd(14)} ${r.outcome.padEnd(14)} tools=${r.toolTurns} msgs=${r.msgs} ${Math.round(r.elapsedMs/1000)}s ${r.error ? "(" + r.error.slice(0,50) + ")" : ""} ${r.solved ? "" : "answer=" + JSON.stringify(r.finalAnswer)}`);
     if (STOP_ON_THROTTLE && r.error && PRIORITY_EXHAUSTED.test(r.error)) {

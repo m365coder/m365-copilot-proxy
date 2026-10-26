@@ -67,6 +67,9 @@ proxy if it runs past its turn allowance or something else spends turns meanwhil
 proxies inherit the variable. The Opus
 priority-access wall (`claude-opus`: 40 turns a day) stops it the same way, as `[bench] PRIORITY
 ACCESS EXHAUSTED` (exit 4); `analyze-arms.mjs` counts the tasks it took as `INVALID(quota)`.
+`OboThrottled`, which has come only on turns with the tool agent (hypotheses §45), doesn't stop it:
+the proxy pauses that path and re-sends, and a task that still ends on it runs again from the start
+after 1, 2, 4, then 8 minutes (six tries); only the last try is scored.
 
 ## Comparing levers (the whole point)
 

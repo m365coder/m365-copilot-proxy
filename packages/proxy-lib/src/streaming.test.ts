@@ -36,7 +36,9 @@ const scripted: {
   awaitTurnBudgetCalls: Array<{ maxWaitMs?: number; signal?: AbortSignal }>;
   /** The `waitForBudget` argument of every run() call, in order (one function per call). */
   budgetWaits: Array<(() => Promise<unknown>) | undefined>;
-} = { deltas: [], thoughts: [], runs: 0, texts: [], queue: [], agentFlags: [], newConversations: 0, models: [], images: [], gate: null, signals: [], stoppedAfter: null, budgetHold: null, awaitTurnBudgetCalls: [], budgetWaits: [] };
+  /** The path and options of every awaitOboPause call, in order. */
+  oboPauseCalls: Array<{ agent: boolean; maxWaitMs?: number }>;
+} = { oboPauseCalls: [], deltas: [], thoughts: [], runs: 0, texts: [], queue: [], agentFlags: [], newConversations: 0, models: [], images: [], gate: null, signals: [], stoppedAfter: null, budgetHold: null, awaitTurnBudgetCalls: [], budgetWaits: [] };
 
 vi.mock("@m365-copilot/core", async (importActual) => {
   const actual = await importActual<typeof import("@m365-copilot/core")>();
@@ -100,14 +102,19 @@ vi.mock("@m365-copilot/core", async (importActual) => {
     if (scripted.budgetHold) throw scripted.budgetHold;
     return { waitedMs: 0 };
   }
-  return { ...actual, ModelSession: FakeModelSession, awaitTurnBudget };
+  // awaitOboPause would sleep for real; record the call instead (noteOboThrottled stays real).
+  async function awaitOboPause(agent: boolean, opts: { maxWaitMs?: number } = {}) {
+    scripted.oboPauseCalls.push({ agent, maxWaitMs: opts.maxWaitMs });
+    return { waitedMs: 0 };
+  }
+  return { ...actual, ModelSession: FakeModelSession, awaitTurnBudget, awaitOboPause };
 });
 
 /** Which fake ModelSession (by creation order) served every run() call, in order. */
 const servedBy: number[] = [];
 
 const { handleChatCompletion, SessionPool, ChatCompletionRequest } = await import("./index.js");
-const { resetAgentRoutes, resetPriorityAccessState, TurnBudgetHold, hasPaidSeat, resetPaidSeat } = await import("@m365-copilot/core");
+const { resetAgentRoutes, resetPriorityAccessState, TurnBudgetHold, hasPaidSeat, resetPaidSeat, resetTurnBudget, oboPauseMs } = await import("@m365-copilot/core");
 
 // The proxy remembers a priority-access wall for the process (until the reset);
 // don't let one test's refusal 429 the next test's Opus request. Nor one test's
@@ -418,6 +425,57 @@ describe("an explicitly Throttled turn (result.value = Throttled)", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0].code).toBe("m365_throttled");
     scripted.result = null;
+  });
+});
+
+describe("an OboThrottled turn (the tool-agent path's own throttle, docs §45)", () => {
+  const OBO = { value: "Throttled", errorCode: "OboThrottled", message: "Sorry, I wasn't able to respond to that. Is there something else I can help with?" };
+  const tools = [{ type: "function", function: { name: "bash", parameters: { type: "object", properties: { command: { type: "string" } } } } }];
+  const request = () => ChatCompletionRequest.parse({ model: "gpt-5.5", stream: false, tools, messages: [{ role: "user", content: "fix calc.py" }] });
+  afterEach(() => {
+    delete process.env.M365_AVOID_THROTTLING;
+    delete process.env.M365_BUDGET_OBO_RETRY_S;
+    scripted.queue = [];
+    resetTurnBudget();
+  });
+
+  it("with M365_AVOID_THROTTLING, pauses the agent path and re-sends the request in a fresh conversation", async () => {
+    process.env.M365_AVOID_THROTTLING = "1";
+    scripted.runs = 0;
+    scripted.newConversations = 0;
+    scripted.oboPauseCalls = [];
+    scripted.queue = [{ fullText: "", result: OBO }, { fullText: "```bash\ncat calc.py\n```" }];
+    const res = await handleChatCompletion(request(), new SessionPool());
+    expect(res.status).toBe(200);
+    expect(scripted.runs).toBe(2);
+    expect(scripted.newConversations).toBe(1);
+    expect(scripted.agentFlags.slice(-2)).toEqual([true, true]);
+    // Every turn waited out the agent path's pause first, within the request's 2 min.
+    expect(scripted.oboPauseCalls.map((c) => c.agent)).toEqual([true, true]);
+    expect(scripted.oboPauseCalls[0]!.maxWaitMs).toBeLessThanOrEqual(2 * 60_000);
+    expect(oboPauseMs(true)).toBe(0); // the answer ended the pause
+  });
+
+  it("answers 429 once the next wait would outlast what the request may wait", async () => {
+    process.env.M365_AVOID_THROTTLING = "1";
+    process.env.M365_BUDGET_OBO_RETRY_S = "60,600"; // the second wait well past an unstreamed request's 2 min
+    scripted.runs = 0;
+    scripted.queue = [{ fullText: "", result: OBO }, { fullText: "", result: OBO }];
+    const res = await handleChatCompletion(request(), new SessionPool());
+    expect(res.status).toBe(429);
+    const err = (await res.json()).error;
+    expect(err.code).toBe("m365_throttled");
+    expect(err.param).toBe("OboThrottled");
+    expect(err.message).toMatch(/a turn with the tool agent/);
+    expect(scripted.runs).toBe(2);
+  });
+
+  it("without it, answers 429 at once, as before", async () => {
+    scripted.runs = 0;
+    scripted.queue = [{ fullText: "", result: OBO }];
+    const res = await handleChatCompletion(request(), new SessionPool());
+    expect(res.status).toBe(429);
+    expect(scripted.runs).toBe(1);
   });
 });
 

@@ -44,13 +44,21 @@ const log = createLogger("turn-budget");
 // upstream turn for one (awaitTurnBudget). Both keep the same reserve, so a
 // task the bench let start never waits inside the proxy.
 //
+// `OboThrottled` is a different throttle (hypotheses §45): it came only on turns
+// with the tool agent, on every account within 39 minutes on 2026-10-26, at lower
+// agent-turn rates than earlier days without one. It neither drains this bucket
+// nor starts the hold above. The path it came on pauses instead (awaitOboPause,
+// below): its next turn waits a minute, and each OboThrottled after that doubles
+// the wait, up to 8 min, until a turn on that path answers.
+//
 // Env: M365_AVOID_THROTTLING=1 (turn the waiting on), M365_BUDGET_CAPACITY (100
 //   turns), M365_BUDGET_REFILL (1.6 turns/min), M365_BUDGET_RESERVE (20 turns kept
 //   back), M365_BUDGET_HOLD_MIN (75), M365_BUDGET_MAX_WAIT_MIN (15: the longest
 //   the proxy holds a streamed request; longer waits get a 429),
 //   M365_BUDGET_LOGS (more log files or dirs, `:`-separated; phase-sweep adds its
 //   archive), M365_LOG_FILE (as the logger reads it: relative to
-//   ~/.config/opencode-m365).
+//   ~/.config/opencode-m365), M365_BUDGET_OBO_RETRY_S (60,120,240,480: the waits
+//   after successive OboThrottled turns on a path; the last one repeats).
 
 export interface BudgetConfig {
   capacity: number;
@@ -62,13 +70,16 @@ export interface BudgetConfig {
   maxWindowMin?: number;
   /** The longest the proxy holds a streamed request waiting (awaitTurnBudget). */
   maxWaitMin: number;
+  /** The waits after successive OboThrottled turns on one path (awaitOboPause). */
+  oboRetryMs: number[];
   enabled: boolean;
   dirs: string[];
 }
 
 export interface BudgetEvent {
   t: number;
-  kind: "turn" | "throttled";
+  /** `obo`: an `OboThrottled` turn, which counts toward neither the bucket nor the hold. */
+  kind: "turn" | "throttled" | "obo";
   /** Identifies the event across files: the same log line seen twice counts once. */
   line: string;
 }
@@ -85,7 +96,7 @@ export interface BudgetDecision {
   ok: boolean;
   waitMs: number;
   want: number;
-  reason: "refill" | "throttle hold";
+  reason: "refill" | "throttle hold" | "obo hold";
 }
 
 const num = (v: string | undefined, d: number) => (v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : d);
@@ -103,6 +114,7 @@ export function budgetConfig(env: Record<string, string | undefined> = process.e
     windowMin: 360,
     maxWindowMin: MAX_WINDOW_MIN,
     maxWaitMin: num(env.M365_BUDGET_MAX_WAIT_MIN, 15),
+    oboRetryMs: oboRetryMs(env.M365_BUDGET_OBO_RETRY_S),
     enabled: !!env.M365_AVOID_THROTTLING && env.M365_AVOID_THROTTLING !== "0",
     dirs: [
       CONFIG_DIR,
@@ -112,7 +124,12 @@ export function budgetConfig(env: Record<string, string | undefined> = process.e
   };
 }
 
-const EVENT = /^\[(\d{4}-\d\d-\d\dT[\d:.]+Z)\] \[\w+\] \[session\] (Chat turn|Turn result: Throttled)/gm;
+function oboRetryMs(v: string | undefined): number[] {
+  const s = (v ?? "").split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  return (s.length ? s : [60, 120, 240, 480]).map((n) => n * 1000);
+}
+
+const EVENT = /^\[(\d{4}-\d\d-\d\dT[\d:.]+Z)\] \[\w+\] \[session\] (Chat turn|Turn result: Throttled(?: \((\w+)\))?)/gm;
 const LOG_FILE = /debug.*\.log$/;
 const SKIP_DIR = /^(browser-profile|node_modules)$|frames/;
 
@@ -120,7 +137,7 @@ const SKIP_DIR = /^(browser-profile|node_modules)$|frames/;
 export function parseEvents(text: string): BudgetEvent[] {
   const out: BudgetEvent[] = [];
   for (const m of text.matchAll(EVENT)) {
-    out.push({ t: Date.parse(m[1]!), kind: m[2] === "Chat turn" ? "turn" : "throttled", line: m[0] });
+    out.push({ t: Date.parse(m[1]!), kind: m[2] === "Chat turn" ? "turn" : m[3] === "OboThrottled" ? "obo" : "throttled", line: m[0] });
   }
   return out;
 }
@@ -225,7 +242,7 @@ export function replay(events: BudgetEvent[], nowMs: number, cfg: Pick<BudgetCon
     level = Math.min(cfg.capacity, level + ((e.t - last) / 60_000) * cfg.refillPerMin);
     last = e.t;
     if (e.kind === "turn") { level -= 1; turns++; }
-    else level = Math.min(level, 0);
+    else if (e.kind === "throttled") level = Math.min(level, 0);
   }
   level = Math.min(cfg.capacity, level + ((nowMs - last) / 60_000) * cfg.refillPerMin);
   return { level, turns, lastThrottle, settled, since };
@@ -270,7 +287,9 @@ export class TurnBudgetHold extends Error {
   ) {
     super(reason === "throttle hold"
       ? `M365 throttled this account at ${new Date(lastThrottle!).toISOString()}; holding new turns for ~${Math.ceil(waitMs / 60_000)} more min so the throttle can lift`
-      : `the account's turn budget needs ~${Math.ceil(waitMs / 60_000)} min to refill before the next turn`);
+      : reason === "obo hold"
+        ? `M365 throttled this path (OboThrottled) at ${new Date(lastThrottle!).toISOString()}; its next turn is due in ~${Math.ceil(waitMs / 60_000)} min`
+        : `the account's turn budget needs ~${Math.ceil(waitMs / 60_000)} min to refill before the next turn`);
     this.name = "TurnBudgetHold";
   }
 }
@@ -302,9 +321,9 @@ export function recordTurn(nowMs = Date.now()): void {
   pruneOwn(nowMs);
 }
 
-/** A throttled turn. session.ts calls it where it logs `Turn result: Throttled`. */
-export function recordThrottle(nowMs = Date.now()): void {
-  ownEvents.push({ t: nowMs, kind: "throttled", line: `own:${ownSeq++}` });
+/** A throttled turn. session.ts calls it where it logs `Turn result: Throttled`, with the turn's errorCode. */
+export function recordThrottle(nowMs = Date.now(), errorCode?: string): void {
+  ownEvents.push({ t: nowMs, kind: errorCode === "OboThrottled" ? "obo" : "throttled", line: `own:${ownSeq++}` });
 }
 
 /**
@@ -321,12 +340,13 @@ export function proxyBudgetStatus(nowMs = Date.now(), cfg: BudgetConfig = budget
   return budgetStatus(nowMs, { ...cfg, dirs }, extra);
 }
 
-/** Only for tests: forget this process's turns and grants. */
+/** Only for tests: forget this process's turns, grants and OboThrottled pauses. */
 export function resetTurnBudget(): void {
   ownEvents.length = 0;
   grants.length = 0;
   logCache.clear();
   line.length = 0;
+  oboPauses.clear();
 }
 
 const abortableSleep = (ms: number, signal?: AbortSignal) => new Promise<void>((res, rej) => {
@@ -429,5 +449,69 @@ async function waitForTurn(cfg: BudgetConfig, opts: AwaitTurnBudgetOptions, t0: 
     }
     // Re-read the logs at least every 15 s: something else may be spending turns.
     await sleep(Math.min(Math.max(d.waitMs, 1000), 15_000), opts.signal);
+  }
+}
+
+// --- OboThrottled: a pause on the path it came on (see the header) ---
+
+/** An OboThrottled episode on one path: since when, how many, and when the next turn may go. */
+interface OboPause { since: number; count: number; nextAt: number }
+// Per path ("agent" / "agent-less"), shared by every request in this process, so
+// however many requests come in, the path is tried at most once per wait.
+const oboPauses = new Map<string, OboPause>();
+const pathKey = (agent: boolean) => (agent ? "agent" : "agent-less");
+
+/**
+ * An OboThrottled turn on this path: start or extend its pause. Returns the wait
+ * before the path's next turn: the first of cfg.oboRetryMs, then the next one per
+ * further OboThrottled turn, the last repeating.
+ */
+export function noteOboThrottled(agent: boolean, nowMs = Date.now(), cfg: Pick<BudgetConfig, "oboRetryMs"> = budgetConfig()): number {
+  const p = oboPauses.get(pathKey(agent));
+  const count = (p?.count ?? 0) + 1;
+  const waitMs = cfg.oboRetryMs[Math.min(count, cfg.oboRetryMs.length) - 1]!;
+  oboPauses.set(pathKey(agent), { since: p?.since ?? nowMs, count, nextAt: nowMs + waitMs });
+  log.info(`OboThrottled on the ${pathKey(agent)} path (${count} since ${new Date(p?.since ?? nowMs).toISOString()}) — its next turn waits ${fmtWait(waitMs)}`);
+  return waitMs;
+}
+
+/** A turn on this path answered: its pause, if any, is over. */
+export function noteOboPathAnswered(agent: boolean, nowMs = Date.now()): void {
+  const p = oboPauses.get(pathKey(agent));
+  if (!p) return;
+  oboPauses.delete(pathKey(agent));
+  log.info(`The ${pathKey(agent)} path answered again ${fmtWait(nowMs - p.since)} after its first OboThrottled turn (${p.count} in all)`);
+}
+
+/** How long this path's next turn must still wait (0 when it isn't paused). */
+export function oboPauseMs(agent: boolean, nowMs = Date.now()): number {
+  const p = oboPauses.get(pathKey(agent));
+  return p ? Math.max(0, p.nextAt - nowMs) : 0;
+}
+
+/**
+ * Before a turn on this path: wait out its OboThrottled pause. A no-op unless
+ * M365_AVOID_THROTTLING is set, or when the path isn't paused. Throws
+ * TurnBudgetHold ("obo hold") instead of waiting longer than `maxWaitMs` (and
+ * cfg.maxWaitMin). Re-checks every 15 s: another request's turn may end the pause.
+ */
+export async function awaitOboPause(agent: boolean, opts: AwaitTurnBudgetOptions = {}): Promise<{ waitedMs: number }> {
+  const cfg = opts.cfg ?? budgetConfig();
+  if (!cfg.enabled) return { waitedMs: 0 };
+  const now = opts.now ?? Date.now;
+  const sleep = opts.sleep ?? abortableSleep;
+  const maxWaitMs = Math.min(cfg.maxWaitMin * 60_000, opts.maxWaitMs ?? Infinity);
+  const t0 = now();
+  for (;;) {
+    opts.signal?.throwIfAborted();
+    const at = now();
+    const waitMs = oboPauseMs(agent, at);
+    if (waitMs === 0) return { waitedMs: at - t0 };
+    if (at - t0 + waitMs > maxWaitMs) {
+      const p = oboPauses.get(pathKey(agent))!;
+      log.info(`OboThrottled pause on the ${pathKey(agent)} path: next turn due in ${fmtWait(waitMs)} — more than this request may wait (${fmtWait(maxWaitMs - (at - t0))}), answering 429`);
+      throw new TurnBudgetHold("obo hold", waitMs, p.since);
+    }
+    await sleep(Math.min(waitMs, 15_000), opts.signal);
   }
 }

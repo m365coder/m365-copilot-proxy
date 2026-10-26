@@ -356,7 +356,10 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   task, and `TASK_GAP` paces bench tasks. F58's per-turn bucket fits the onsets better than any
   thread count, and by it a busy pi session drains the account too: every turn takes one, mid-thread
   or not. `M365_AVOID_THROTTLING=1` waits for that bucket: the bench before each task, the proxy
-  before each upstream turn, inside the open stream (§37). The model is `packages/core/src/turn-budget.ts`;
+  before each upstream turn, inside the open stream (§37). **`OboThrottled` is not that bucket** (§45): it
+  came only on turns with the tool agent, at agent-turn rates earlier days had without one, so it neither
+  drains the bucket nor starts the 75-minute hold; it pauses the path it came on (1, 2, 4, then 8 min),
+  and the proxy re-sends the request when the pause ends (`awaitOboPause`, `noteOboThrottled`). The model is `packages/core/src/turn-budget.ts`;
   `scripts/bench/turn-budget.mjs` re-exports it, so tune it in one place. **A fresh login does NOT clear it:** the throttle is
   keyed on the account's `oid`, which a new token keeps (API doc §2/§7, hypotheses §11 H-R1 —
   F13's "fresh login clears it" was n=1 and confounded with a rest). It lifts with idle time,

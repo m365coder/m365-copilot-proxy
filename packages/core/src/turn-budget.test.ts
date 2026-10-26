@@ -3,8 +3,12 @@ import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  awaitOboPause,
   awaitTurnBudget,
   budgetConfig,
+  noteOboPathAnswered,
+  noteOboThrottled,
+  oboPauseMs,
   proxyBudgetStatus,
   readLogEvents,
   recordThrottle,
@@ -22,6 +26,7 @@ const T0 = Date.parse("2026-10-12T08:00:00.000Z");
 const iso = (ms: number) => new Date(ms).toISOString();
 const turnLine = (ms: number, n = 0) => `[${iso(ms)}] [INFO] [session] Chat turn ${n}: model=claude-sonnet, isFirst=false, text="x"\n`;
 const throttleLine = (ms: number) => `[${iso(ms)}] [INFO] [session] Turn result: Throttled (PerUserThrottled)\n`;
+const oboLine = (ms: number) => `[${iso(ms)}] [INFO] [session] Turn result: Throttled (OboThrottled)\n`;
 
 function logDir(lines: string[] = []): { dir: string; file: string } {
   const dir = mkdtempSync(join(tmpdir(), "turn-budget-"));
@@ -32,7 +37,7 @@ function logDir(lines: string[] = []): { dir: string; file: string } {
 
 const cfgFor = (dir: string, over: Partial<BudgetConfig> = {}): BudgetConfig => ({
   capacity: 100, refillPerMin: 1.6, reserve: 20, holdMin: 75, windowMin: 360, maxWindowMin: 4320,
-  maxWaitMin: 15, enabled: true, dirs: [dir], ...over,
+  maxWaitMin: 15, oboRetryMs: [60_000, 120_000, 240_000, 480_000], enabled: true, dirs: [dir], ...over,
 });
 
 /** A fake clock whose sleeps advance it. */
@@ -291,5 +296,56 @@ describe("awaitTurnBudget's line (#77)", () => {
     front.release();
     expect((await front.done).waitedMs).toBe(10 * 60_000);
     expect((await next).waitedMs).toBe(10 * 60_000); // decided only once the front had
+  });
+});
+
+describe("OboThrottled (docs §45)", () => {
+  it("reads an OboThrottled line as its own kind, not as the account's throttle", () => {
+    const { file } = logDir([turnLine(T0), oboLine(T0 + 1000), throttleLine(T0 + 2000)]);
+    expect(readLogEvents(file).map((e) => e.kind)).toEqual(["turn", "obo", "throttled"]);
+  });
+
+  it("neither drains the bucket nor starts the hold", async () => {
+    const { dir } = logDir([turnLine(T0 - 60_000), oboLine(T0 - 59_000)]);
+    const k = clock();
+    const st = proxyBudgetStatus(T0, cfgFor(dir), k.logged);
+    expect(st.lastThrottle).toBeNull();
+    expect(st.level).toBeGreaterThan(90);
+    expect((await awaitTurnBudget({ cfg: cfgFor(dir), ...k })).waitedMs).toBe(0);
+  });
+
+  it("pauses the path it came on: a minute, then doubling, the last wait repeating, until a turn answers", () => {
+    const cfg = { oboRetryMs: [60_000, 120_000, 240_000, 480_000] };
+    expect([0, 1, 2, 3, 4].map((i) => noteOboThrottled(true, T0 + i, cfg))).toEqual([60_000, 120_000, 240_000, 480_000, 480_000]);
+    expect(oboPauseMs(true, T0 + 4)).toBe(480_000);
+    expect(oboPauseMs(false, T0 + 4)).toBe(0); // the other path isn't paused
+    noteOboPathAnswered(true, T0 + 10);
+    expect(oboPauseMs(true, T0 + 10)).toBe(0);
+    expect(noteOboThrottled(true, T0 + 20, cfg)).toBe(60_000); // a new episode starts at a minute again
+  });
+
+  it("waits out the pause before the path's next turn, and answers 429 past what the request may wait", async () => {
+    const { dir } = logDir();
+    const k = clock();
+    noteOboThrottled(true, T0, { oboRetryMs: [60_000] });
+    expect((await awaitOboPause(true, { cfg: cfgFor(dir), ...k })).waitedMs).toBe(60_000);
+    expect((await awaitOboPause(false, { cfg: cfgFor(dir), ...k })).waitedMs).toBe(0);
+    noteOboThrottled(true, k.c.t, { oboRetryMs: [60_000] });
+    const err = await awaitOboPause(true, { cfg: cfgFor(dir), ...k, maxWaitMs: 30_000 }).catch((e) => e);
+    expect(err).toBeInstanceOf(TurnBudgetHold);
+    expect(err.reason).toBe("obo hold");
+    expect(err.waitMs).toBe(60_000);
+  });
+
+  it("doesn't wait without M365_AVOID_THROTTLING", async () => {
+    const { dir } = logDir();
+    const k = clock();
+    noteOboThrottled(true, T0, { oboRetryMs: [60_000] });
+    expect((await awaitOboPause(true, { cfg: cfgFor(dir, { enabled: false }), ...k })).waitedMs).toBe(0);
+  });
+
+  it("reads the waits from M365_BUDGET_OBO_RETRY_S", () => {
+    expect(budgetConfig({}).oboRetryMs).toEqual([60_000, 120_000, 240_000, 480_000]);
+    expect(budgetConfig({ M365_BUDGET_OBO_RETRY_S: "30,90" }).oboRetryMs).toEqual([30_000, 90_000]);
   });
 });

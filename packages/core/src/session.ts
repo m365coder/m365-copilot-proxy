@@ -885,7 +885,7 @@ export class CopilotSession {
                 ...(typeof item.result.message === "string" ? { message: item.result.message } : {}),
               };
               if (item.result.value !== "Success") log.info(`Turn result: ${item.result.value}${serverResult.errorCode ? ` (${serverResult.errorCode})` : ""}`);
-              if (item.result.value === "Throttled") recordThrottle();
+              if (item.result.value === "Throttled") recordThrottle(Date.now(), serverResult.errorCode);
             }
             if (item.turnState) turnState = item.turnState;
             if (item.throttling) {

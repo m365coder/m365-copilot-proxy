@@ -6382,3 +6382,38 @@ on none (0 of ~500 bench and pi turns). The controls split the same way: `magic`
 premium account's paid scenario (Oct 24, §41) and none on a non-premium account (Oct 23, §40); the
 `Gpt_5_N_Reasoning` tones sent it on 5–16 of ~22 turns on both kinds of account; the `Gpt_5_N_Chat` tones on
 none. The single-turn probes (F109) didn't show it.
+
+---
+
+## 45. Oct 26 2026 — `OboThrottled`
+
+### F111 — a throttle on the tool-agent path that the turn bucket doesn't predict 🟡
+**What came back.** A turn's final item: `result.value: "Throttled"`, `errorCode: "OboThrottled"`, `message:
+"Sorry, I wasn't able to respond to that. Is there something else I can help with?"`, after ~15 s with no
+other frame. It is in no log before Oct 26. That day it came on every account within 39 minutes, each time on
+a turn with the tool agent, and each account had one before its sweep stopped:
+
+| account | `OboThrottled` at | turns with the agent in the 1 h / 6 h before | most such turns in any 1 h / 6 h on Oct 24, with none |
+|---|---|---|---|
+| premium | 14:52Z (real pi) | 34 / 248 | 132 / 618 |
+| a non-premium account | 14:44Z (real pi) | 81 / 524 | 165 / 512 |
+| another non-premium account | 15:23Z (bench) | 80 / 80 | 164 / 508 |
+
+(Counted from every debug log on each account; a turn has the agent when its `[model] run:` line names one.)
+On Oct 24 each account ran 2–4 times this many agent turns without one, so it isn't a per-account rate limit
+of the F58 kind, and the turn bucket can't see it coming. The three hits fell within the US business hours of
+a Monday (Oct 24 was a Saturday); whether that is the cause is untested. It wasn't one outage across accounts
+at once: the third account's turns with the agent kept answering from 14:40Z until its own at 15:23Z. Whether
+an account's agent-less turns are throttled during its episode is untested: none went out.
+
+**How long it lasts: open.** No turn went to the agent path soon after any of the three: the premium account's
+next agent turn, 43 min later, answered; a non-premium account's, 75 min later (the bench's hold), answered
+and four real-pi runs followed without one. `scripts/obo-watch.mjs` runs on a non-premium account from 16:28Z
+Oct 26: one tool-less agent turn every 2 min, and after an `OboThrottled` one every minute until the agent
+path answers, with agent-less turns alongside.
+
+**Change.** `M365_AVOID_THROTTLING` treats it apart from `PerUserThrottled`: it neither drains the turn bucket
+nor starts the 75-minute hold. The path it came on pauses (1, 2, 4, then 8 min between tries, shared by every
+request in the process) and the proxy re-sends the request in a fresh conversation when the pause ends, until
+a turn on that path answers or the request has waited as long as it may (15 min streamed, 2 min not); the
+bench runs a task that still ends on it again from the start, up to six times.
