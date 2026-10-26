@@ -16,10 +16,27 @@
 
 const RS = "\x1E";
 
+import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 const ROOT = pathToFileURL(process.cwd()).href;
 const wsMod = await import(`${ROOT}/node_modules/.pnpm/ws@8.20.0/node_modules/ws/wrapper.mjs`);
 const WebSocket = wsMod.default ?? wsMod.WebSocket;
+
+// With M365_DEBUG=1, every turn is logged the way the proxy logs one
+// (`[session] Chat turn`, `Turn result: Throttled`) to a debug log of its own,
+// so M365_AVOID_THROTTLING's bucket counts probe turns too (turn-budget.ts reads
+// every debug*.log under ~/.config/opencode-m365). Without it, a burst of probe
+// threads before a sweep throttled the account mid-sweep (hypotheses §36).
+const BUDGET_LOG = join(homedir(), ".config", "opencode-m365", "debug-probes.log");
+function logTurn(event) {
+  if (process.env.M365_DEBUG !== "1") return;
+  try {
+    mkdirSync(join(homedir(), ".config", "opencode-m365"), { recursive: true });
+    appendFileSync(BUDGET_LOG, `[${new Date().toISOString()}] [INFO] [session] ${event}\n`);
+  } catch {}
+}
 
 const BASE_ALLOWED = [
   "Chat", "Suggestion", "InternalSearchQuery", "Disengaged",
@@ -214,6 +231,7 @@ export function oneTurn(o) {
 
         if (!handshakeDone) {
           handshakeDone = true;
+          logTurn(`Chat turn 0: probe tone=${tone} scenario=${scenario} agent=${agentId ? "yes" : "no"}`);
           ws.send(JSON.stringify(chatMsg) + RS + JSON.stringify(metrics) + RS);
           continue;
         }
@@ -246,6 +264,7 @@ export function oneTurn(o) {
                 metering: it.throttling.metering ?? null,
               };
             }
+            if (it.result?.value === "Throttled") logTurn(`Turn result: Throttled (${it.result.errorCode ?? "?"})`);
             if (it.result?.serviceVersion) serviceVersion = it.result.serviceVersion;
             if (typeof it.turnCount === "number") turnCount = it.turnCount;
             if (typeof it.result?.message === "string" && it.result.message.length > snapshotText.length) snapshotText = it.result.message;
