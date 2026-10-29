@@ -60,7 +60,16 @@ async function login() {
   const submit = () => page.locator('input[type="submit"]:visible, button[type="submit"]:visible').first().click();
   await fill('input[name="loginfmt"]', creds.email); await submit(); await page.waitForTimeout(2500);
   await fill('input[name="passwd"]', creds.password); await submit(); await page.waitForTimeout(2500);
-  try { await fill('input[name="otc"]', new TOTP({ secret: creds.mfaSecret }).generate()); await submit(); await page.waitForTimeout(2500); } catch {}
+  // After the password: the code field, or "Verify your identity" (a list of MFA methods), where only
+  // "Use a verification code" is chosen, never Text or Call (docs/hypotheses.md §47 F117).
+  const code = page.locator('input[name="otc"]:visible, #idTxtBx_SAOTCC_OTC:visible').first();
+  const choice = page.getByRole("button", { name: /^use a verification code$/i }).first();
+  try {
+    await code.or(choice).first().waitFor({ state: "visible", timeout: 30000 });
+    if (await choice.isVisible()) await choice.click();
+    await code.waitFor({ state: "visible", timeout: 15000 });
+    await code.fill(new TOTP({ secret: creds.mfaSecret }).generate()); await submit(); await page.waitForTimeout(2500);
+  } catch {}
   try { await page.locator("#idSIButton9:visible").click({ timeout: 8000 }); } catch {}
 }
 

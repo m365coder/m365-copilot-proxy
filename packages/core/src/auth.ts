@@ -208,6 +208,9 @@ async function fillVerified(
   }
 }
 
+/** The TOTP field: `otc` on the classic page, `idTxtBx_SAOTCC_OTC` after "Use a verification code". */
+const CODE_FIELDS = ['input[name="otc"]', "#idTxtBx_SAOTCC_OTC"];
+
 /** Click the visible primary submit button (Next / Sign in / Verify / Yes). */
 async function clickSubmit(page: any): Promise<void> {
   await page
@@ -296,11 +299,25 @@ async function driveAzureLogin(page: any, creds: Credentials): Promise<void> {
     log.info("Step: password skipped (SSO — no password prompt)");
   }
 
-  if (await isVisibleSoon(page, 'input[name="otc"]', 8000)) {
+  // After the password AAD shows either the code field or "Verify your identity", a list of the
+  // account's MFA methods. On that list take "Use a verification code" (the authenticator app's TOTP)
+  // by its button role: clicking the tile's `[data-value="PhoneAppOTP"]` element times out. Never
+  // "Text" or "Call", which send an SMS to or ring the account's phone.
+  const codeChoice = page.getByRole("button", { name: /^use a verification code$/i }).first();
+  const codeField = page.locator(`${CODE_FIELDS.map((s) => `${s}:visible`).join(", ")}`).first();
+  if (await codeField.or(codeChoice).first().waitFor({ state: "visible", timeout: 8000 }).then(() => true, () => false)) {
+    if (await codeChoice.isVisible().catch(() => false)) {
+      log.info("Step: mfa method (use a verification code)");
+      await codeChoice.click({ timeout: 10000 });
+      await codeField.waitFor({ state: "visible", timeout: 10000 });
+    }
     log.info("Step: mfa");
+    const field = (await page.locator("#idTxtBx_SAOTCC_OTC:visible").count()) > 0 ? "#idTxtBx_SAOTCC_OTC" : 'input[name="otc"]';
     const otpCode = new TOTP({ secret: creds.mfaSecret }).generate();
-    await fillVerified(page, 'input[name="otc"]', otpCode, "otc");
-    await clickSubmit(page);
+    await fillVerified(page, field, otpCode, "otc");
+    const verify = page.locator("#idSubmit_SAOTCC_Continue:visible").first();
+    if (field === "#idTxtBx_SAOTCC_OTC" && (await verify.count()) > 0) await verify.click();
+    else await clickSubmit(page);
     await capture(page, "step3-after-mfa");
   } else {
     log.info("Step: mfa skipped (SSO — no TOTP prompt)");
