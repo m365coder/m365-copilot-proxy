@@ -65,6 +65,7 @@ export {
   noteAgentlessRouteDead,
   noteAgentlessRouteAlive,
   isAgentlessRouteAlive,
+  shouldResendToollessWithAgent,
   resetAgentRoutes,
   AGENTLESS_TOOL_TONES,
   AGENT_CLAUDE_TONES,

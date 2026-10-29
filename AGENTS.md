@@ -226,12 +226,17 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   (`priority-access.ts`) and `meteredBudgetOf()` maps a model to one; walls are remembered per budget.
   A new `*Query*` key in `metering` is how a new metered model shows up — add a budget, don't hard-code Opus.
   Don't burn it on sweeps. See docs/hypotheses.md §15, §24 F55, F59 (issue #18), §26.
-- **`claude-opus-4.8` is the same tone on the included scenario — only on a premium account, and
-  unmetered.** It replaced Opus 4.5 (`claude-opus-4.5`, now an alias) unannounced between Oct 4 and
+- **`claude-opus-4.8` is the same tone on the included scenario, unmetered; M365 serves it to a premium
+  account, and agent-less to some non-premium accounts.** It replaced Opus 4.5 (`claude-opus-4.5`, now an alias) unannounced between Oct 4 and
   Oct 11 2026, so re-run the self-ID probes now and then. Opus 4.5 served only through the tool agent;
-  Opus 4.8 serves agent-less too, so tool-less requests go without it. On a non-premium account it is
-  the dead route on both paths: there is no fallback (it is NOT in `PREMIUM_ONLY_AGENT_TONES`), and
-  `isPremiumOnlyModel` turns the `InternalError`s into a 502 that says so. Its tool requests keep the
+  Opus 4.8 serves agent-less too, so tool-less requests go without it. On a non-premium account the
+  agent route is dead, and M365 serves the model agent-less only after Microsoft has enabled it for that
+  account: since Oct 29 2026 for one of our two non-premium accounts and not for the other, with nothing
+  on our side differing (§47). A probe shows when M365 starts serving it to an account; nothing a probe
+  sends changes that. `Claude_Opus` is in `PREMIUM_ONLY_AGENT_TONES`, so on a non-premium account the
+  proxy records the dead agent route and sends the tool requests agent-less (a dead tool-less request is
+  not re-sent with the agent, `shouldResendToollessWithAgent`), and where agent-less is dead too
+  `isPremiumOnlyModel` turns the `InternalError`s into a 502 whose message says so. Its tool requests keep the
   agent (§36): agent-less ties on the bench but costs 22% more turns in real pi (F90), and has its own
   code interpreter, which it works in under a framing that doesn't steer it out (`baseline` 1/10 vs
   8/10), and writes its own `<tool_response>`s (13 of 134 turns, 0 with the agent; F91). Routing is the
@@ -242,7 +247,7 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   ones tripped the jailbreak classifier on a third of tasks (§24 F56), and relay_batch's "put as much
   as you can into one block" cut turns per task 37% (F60), which is what Opus 5.5's budget counts. Opus 4.5 sometimes ended a tool fence with its native call
   markup (`</invoke>`, `</parameter>`…); the parser strips it (F57), on its own line or glued to the last one (Sonnet 5.5 too), don't "simplify" that away. A call the model writes again as a correction ("Oops… here is the same command") replaces the first copy rather than counting as two. Only a premium account can
-  bench it. See docs/hypotheses.md §24, §36.
+  bench its agent path. See docs/hypotheses.md §24, §36, §47.
 - **Entitlement-gated ≠ metered.** `gpt-6-think-deeper` (`Gpt_6_Reasoning`) and `claude-sonnet-5`
   (`Claude_Sonnet_5`) need the same paid
   scenario as Opus but carry **no** priority-access budget and throttle like everything else,

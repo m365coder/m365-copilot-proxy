@@ -110,6 +110,10 @@ than "we eyeballed one run." See §M (Methods) for the experimental rig.
   code end to end (F104)
 - §42 — Sonnet 5.5 as `claude-sonnet`'s default on a premium account: `relay_batch`, 28% fewer real-pi turns at
   10/10 (F105, H26b); Sonnet 5 stays on `relay` (F106)
+- §47 — M365 now serves Opus 4.8 agent-less to one non-premium account and not to another: nothing in our
+  requests differs, each account always connects to one backend region, and Microsoft enables the model per account
+  (F114; by region or by user, H47a); on a non-premium account the proxy sends Opus 4.8 tool requests agent-less
+  after one dead agent turn (F115)
 
 ---
 
@@ -6533,3 +6537,79 @@ on a premium account, default to `relay_batch`; `relay_echo_first` took 23–31%
 `relay_batch` on `claude-container` and `claude-fable`, and Opus 5.5's budget counts turns. Untested: a pi
 arm per framing (~30 turns each) is most of a day's budget. Probe: real pi fix-bug + multi, 5 + 5 per
 framing, after a 00:00Z reset, on `claude-opus`.
+
+---
+
+## 47. Oct 29 2026 — M365 serves Opus 4.8 to one non-premium account, agent-less only
+
+**Question.** The user's probes (2026-10-29 01:13–02:23Z, service `1.0.03586.60931`) show that M365 now serves
+`Claude_Opus` on the included scenario agent-less to non-premium account 1 (self-ID "Claude Opus 4.8; Anthropic;
+2026-01"); §36 found that route dead on every non-premium account. With the tool agent, account 1 still gets the
+dead route, and non-premium account 2 gets the dead route with the agent and without it. What differs between the
+two accounts, and can anything on our side make M365 serve the model to account 2?
+
+**Raw data** (local, not in the repo): `scripts/tone-out/` and `scripts/agent-tone-out/` in each account's
+checkout, and one frame dump per non-premium account (02:41Z).
+
+| `Claude_Opus` @ included, Oct 29 | premium | non-premium account 1 | non-premium account 2 |
+|---|---|---|---|
+| agent-less (`tone-probe`) | `DeepLeo`, "Claude Opus 4.8; Anthropic" 1/1 | `DeepLeo` 6/6, self-ID "Claude Opus 4.8; Anthropic" (cutoff 2026-01 ×4, 2025-01 ×1) | BotConnection, `InternalError` 3/3 |
+| agent attached (`agent-tone-probe`) | `DeepLeo`, `3PDeclarativeAgent` 1/1 | BotConnection, `InternalError` 1/1 | BotConnection, `InternalError` 2/2 |
+
+**When.** On account 1 the last probe that got the dead route agent-less ran at 2026-10-22 23:29Z, and the first
+that got an answer at 2026-10-29 01:13Z; no probe ran in between. Every probe on account 2 since Oct 2 got the
+dead route, the last at 02:41Z on Oct 29.
+
+### F114 — nothing in our requests differs; Microsoft enables the model per account 🟢
+The same on both non-premium accounts:
+- **The request.** Same commit, same probe edits; `_probe-chat.mjs` sends nothing account-specific except the
+  token and `{oid}@{tid}`.
+- **The token.** The same claims and scopes.
+- **Licences.** None on either: `/me/licenseDetails` and `assignedPlans` are empty (Graph), so both use the free
+  Copilot Chat. The premium account has `Microsoft_365_Copilot`. Each non-premium account is in three groups that
+  the other isn't in, none of them about Copilot.
+- **The web client's ring.** `OH.RNG=ww` and `SSRUserType=aad` on both (the web app's routing cookies).
+- **The final item.** The same `metering` map, 40 keys, which included-scenario turns of both accounts have
+  carried since at least Oct 7 (§36's "no metering on included turns" was measured on the premium account), except
+  `WXPAgentMode` (5 on account 1, 7 on account 2, constant since Oct 7); the same `serviceVersion`.
+
+Different:
+- **The backend region.** Every connection of an account goes to one region, named by `x-bepartition` and
+  `x-calculatedbetarget` in the WebSocket upgrade response: account 1 NORTHCENTRALUS, account 2 WESTUS2, the
+  premium account CENTRALUS (one connection). 13 of 13 handshake-only connections per non-premium account, 8 of
+  them each with its own `X-RoutingParameter-SessionKey`: the front end used the key to choose a machine, and never
+  chose another region. The substrate HTTP paths (`negotiate`, `GetUserSettings`) go to the same region, so the
+  front end chooses the region from the token's user, not from the URL. §32's account alternated between two
+  regions, so this may not hold for every account.
+- **The failure.** Account 2's turn ends `turnState: Failed`, `result: InternalError`, about 1 s after the
+  service received it, with no model output and the user message's `offense` still `Unknown`; M365 answered
+  account 1's identical request in 4.5 s.
+
+So Microsoft's servers decide, per account, whether M365 serves the model. No request field, token claim, licence
+or setting on our side separates the two accounts. A probe shows when M365 starts serving the model to account 2;
+nothing a probe sends changes that.
+
+### H47a (open) — by region or by user?
+With two accounts in two regions, region and user are confounded, and the client can't choose the region
+(above). `WXPAgentMode` shows that the two accounts already get different server-side allocations of another
+feature, which fits a per-user rollout without showing it. **Probe:** a third non-premium account, in either
+region; meanwhile `tone-probe.mjs` with only the included `Claude_Opus` cell, one turn per account per day, and
+record the day that M365 starts serving the model to account 2.
+
+### F115 — on a non-premium account, the proxy sends Opus 4.8 tool requests agent-less after one dead agent turn 🟢
+`Claude_Opus` is now in `PREMIUM_ONLY_AGENT_TONES`. The first tool request on `claude-opus-4.8` carries the agent;
+on a non-premium account M365 returns `InternalError` for it, and the proxy records the agent route as dead for
+the rest of the process and re-sends the whole request agent-less in a fresh conversation, under `relay_batch`,
+which ties with the agent on the bench (F90). Where agent-less is dead too, the request still ends in the
+`model_route_unavailable` 502, one turn later; its message now says that Microsoft hasn't enabled the model for
+this account, not that the model is premium-only. The proxy still doesn't re-send a dead tool-less `Claude_Opus`
+request with the agent (F101's fallback; `shouldResendToollessWithAgent`): its agent route is dead wherever its
+agent-less route is, and since the proxy records routes per tone, a transient on a tool-less Opus 5.5 request
+would otherwise have put tool-less Opus 4.8 requests on the agent too.
+
+**Live** (non-premium account 1, `proxy-verify --agent --tools --multiturn --model=claude-opus-4.8`, 03:05Z): M365
+returned `InternalError` for the agent turn in 3.9 s; on the agent-less re-send the model called the tool (turn 1:
+10.0 s); the proxy sent turn 2 agent-less from the start, and the model used the result: PASS. Without `--agent`:
+PASS, 7.4 s and 8.8 s. On that account agent-less is the only path, so it has the costs that F90 and F91 measured
+agent-less on the premium account: 22% more real-pi turns, and a code interpreter of its own, which
+`relay_batch`'s user-voice note keeps the model out of.

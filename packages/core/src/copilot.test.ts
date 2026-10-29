@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import {
   AGENT_CLAUDE_TONES,
   AGENTLESS_TOOL_TONES,
+  shouldResendToollessWithAgent,
   couldBeLicenceRefusalPrefix,
   getAvailableModels,
   getScenarioForModel,
@@ -227,6 +228,22 @@ describe("which tool requests carry the tool agent", () => {
     for (const id of ["claude-opus", "claude-opus-5", "claude-opus-5.5", "claude-opus-4.8", "claude-opus-4.5", "claude-opus-5[1m]", "claude-opus-4-8-20261001"]) {
       expect(usesAgent(id)).toBe(true);
     }
+  });
+
+  it("sends Opus tool requests agent-less once the proxy has recorded a dead agent route (§47)", () => {
+    expect(PREMIUM_ONLY_AGENT_TONES.has("Claude_Opus")).toBe(true);
+    noteAgentRouteDead("Claude_Opus");
+    expect(usesAgent("claude-opus-4.8")).toBe(false);
+    expect(usesAgent("gpt-6-sol")).toBe(true);
+    resetAgentRoutes();
+    expect(usesAgent("claude-opus-4.8")).toBe(true);
+  });
+
+  it("re-sends a dead tool-less request with the agent for GPT-6 Sol only, not Opus (§40 F101, §47)", () => {
+    expect(shouldResendToollessWithAgent("Gpt_6_Sol_Reasoning")).toBe(true);
+    expect(shouldResendToollessWithAgent("Gpt_61_Sol_Reasoning")).toBe(true);
+    expect(shouldResendToollessWithAgent("Claude_Opus")).toBe(false);
+    expect(shouldResendToollessWithAgent("Gpt_5_5_Chat")).toBe(false);
   });
 
   it("still gives the GPT-5.x and default models the agent — they won't act without it", () => {
@@ -492,7 +509,7 @@ describe("Opus routing", () => {
     expect(requestUsesAgent("claude-opus-4.8", true)).toBe(false);
   });
 
-  it("knows the included Opus is premium-only on either path, and nothing else is", () => {
+  it("knows the included Opus can be the dead route on both paths, and nothing else is", () => {
     for (const id of ["claude-opus-4.8", "claude-opus-4.5", "claude-opus-4-8-20261001"]) expect(isPremiumOnlyModel(id)).toBe(true);
     for (const id of ["claude-opus", "claude-opus-5.5", "claude-sonnet", "gpt-6-sol"]) expect(isPremiumOnlyModel(id)).toBe(false);
   });

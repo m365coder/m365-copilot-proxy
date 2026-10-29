@@ -17,6 +17,7 @@ import {
   noteAgentlessRouteDead,
   noteAgentlessRouteAlive,
   isAgentlessRouteAlive,
+  shouldResendToollessWithAgent,
   toneUsesToolAgent,
   PREMIUM_ONLY_AGENT_TONES,
   defaultFramingForModel,
@@ -677,11 +678,11 @@ export async function handleChatCompletion(
       // whole request with the agent in a fresh conversation. The agent-less
       // route is marked dead only once the agent has answered (below), so a
       // one-off InternalError can't move every later tool-less request onto
-      // the agent. Not when the agent route is known dead, and never under
-      // M365_FORCE_AGENT=0.
+      // the agent. Not when the agent route is known dead, never under
+      // M365_FORCE_AGENT=0, and not for Opus (shouldResendToollessWithAgent).
       if (
         !useToolAgent && !hasTools && !agentlessFallbackDone &&
-        PREMIUM_ONLY_AGENT_TONES.has(tone) &&
+        shouldResendToollessWithAgent(tone) &&
         !isAgentlessRouteAlive(tone) && toneUsesToolAgent(tone) &&
         process.env.M365_FORCE_AGENT !== "0" &&
         copilotStream.result?.value === "InternalError" &&
@@ -815,8 +816,9 @@ export async function handleChatCompletion(
       // so a "continue" has nothing to continue from either: re-send the
       // WHOLE request once in a fresh conversation instead. Not a free retry: it
       // spends an attempt, so a tone that fails every time still ends at the
-      // premium-only / empty-response handling below. A premium-only model's
-      // InternalError is deterministic (§24), so it skips straight there.
+      // premium-only / empty-response handling below. On an account that M365
+      // doesn't serve Opus 4.8 to, its InternalError is deterministic (§24,
+      // §47), so the request skips straight there.
       if (
         !internalErrorFreshRetried &&
         copilotStream.result?.value === "InternalError" &&
@@ -864,12 +866,14 @@ export async function handleChatCompletion(
         await new Promise(r => setTimeout(r, SHORT_RETRY_DELAY_MS));
         text = "Please continue."; // M365 already has context
       } else {
-        // A model served only on a premium account, on a non-premium one (Opus
-        // 4.8: BotConnection, `InternalError`, every time, with the agent and
-        // without — §24, §36). Not a throttle, so it doesn't feed the degradation
-        // backoff; say what it is instead of "empty response".
+        // A model that M365 doesn't serve to this account on either path (Opus
+        // 4.8 on a non-premium account that Microsoft hasn't enabled it for:
+        // BotConnection, `InternalError`, every time, with the agent and
+        // without — §24, §36, §47). Not a throttle, so it doesn't feed the
+        // degradation backoff; the error message names the cause instead of
+        // "empty response".
         if (isPremiumOnlyModel(model) && copilotStream.result?.value === "InternalError") {
-          log.info(`${model}: InternalError on every attempt — premium-only model on a non-premium account?`);
+          log.info(`${model}: InternalError on every attempt — not enabled for this account?`);
           return { error: premiumOnlyModelResponse(model) };
         }
         // Final empty after retries, and not an at-limit (per-conversation) cap:
@@ -1341,7 +1345,7 @@ function paidSeatRequiredResponse(model: string): Response {
 function premiumOnlyModelResponse(model: string): Response {
   return jsonResponse(502, {
     error: {
-      message: `M365 Copilot didn't serve ${model}: it returned InternalError on every attempt. ${model} is served only on a premium (paid Microsoft 365 Copilot) account; on any other account use claude-sonnet.`,
+      message: `M365 Copilot didn't serve ${model}: it returned InternalError on every attempt. M365 serves ${model} to a premium (paid Microsoft 365 Copilot) account, and agent-less to a non-premium account only after Microsoft has enabled it for that account; Microsoft decides that per account and hasn't enabled it for this one. Use claude-sonnet on this account until it does.`,
       type: "upstream_error",
       code: "model_route_unavailable",
     },

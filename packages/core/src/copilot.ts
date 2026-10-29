@@ -391,10 +391,11 @@ export const AGENTLESS_TOOL_TONES: ReadonlySet<string> = new Set([
  *   the agent (docs §36). Opus 4.5, the included model before it, served ONLY
  *   with the agent (§24). On the paid scenario (`claude-opus`, Opus 5.5) the
  *   agent keeps both Opus models on the same path and the same framing.
- *   There is no agent-less fallback to learn (it isn't in
- *   PREMIUM_ONLY_AGENT_TONES): a non-premium account can't reach either model
- *   at all — the paid scenario is unlicensed there (F46), and the included one
- *   is dead with and without the agent (isPremiumOnlyModel).
+ *   On a non-premium account the agent route is dead and the paid scenario is
+ *   unlicensed (F46), but since October 2026 M365 serves Opus 4.8 agent-less on
+ *   the included scenario to some of them (docs §47), so `Claude_Opus` is in
+ *   PREMIUM_ONLY_AGENT_TONES as well: on such an account the proxy records the
+ *   dead agent route and sends the tool requests agent-less.
  *
  * Not `Claude_Sonnet` or `Claude_Sonnet_5` (docs §30, benched on a premium
  * account, where their agent route serves). The agent takes Sonnet 4.6,
@@ -422,6 +423,12 @@ export const AGENT_CLAUDE_TONES: ReadonlySet<string> = new Set([
  * - `Gpt_61_Sol_Reasoning`: the same split — agent attached, premium serves on
  *   both scenarios (8/8), non-premium is dead on both accounts (3/3)
  *   (agent-tone-probe 2026-10-06, docs §27).
+ * - `Claude_Opus` (Opus 4.8, `claude-opus-4.8`, included scenario): with the
+ *   agent attached, M365 serves it to a premium account (§36), and both
+ *   non-premium accounts get the dead route. Agent-less, M365 has served it to
+ *   one non-premium account since October 2026 and not to the other (§47). On
+ *   the other one the agent-less re-send gets the dead route too, and the
+ *   request ends in the model_route_unavailable 502 (isPremiumOnlyModel).
  *
  * Nothing on the token says which kind of account this is, so the proxy finds
  * out by trying: the first tool request on such a tone carries the agent, and
@@ -439,6 +446,7 @@ export const AGENT_CLAUDE_TONES: ReadonlySet<string> = new Set([
 export const PREMIUM_ONLY_AGENT_TONES: ReadonlySet<string> = new Set([
   "Gpt_6_Sol_Reasoning",
   "Gpt_61_Sol_Reasoning",
+  "Claude_Opus",
 ]);
 
 // What this process has learned about the agent route, per tone. The proxy
@@ -494,6 +502,17 @@ export function isAgentlessRouteAlive(tone: string): boolean {
   return aliveAgentlessRoutes.has(tone);
 }
 
+/**
+ * Whether the proxy re-sends a tool-less request on `tone` with the agent after
+ * the agent-less turn got the dead route: yes for GPT-6 Sol, whose agent route
+ * M365 serves on a non-premium account (docs §40 F101). Not for `Claude_Opus`,
+ * the other kind of tone in PREMIUM_ONLY_AGENT_TONES: on every account probed,
+ * its agent route is dead wherever its agent-less one is (§47).
+ */
+export function shouldResendToollessWithAgent(tone: string): boolean {
+  return PREMIUM_ONLY_AGENT_TONES.has(tone) && tone !== "Claude_Opus";
+}
+
 /** Forget everything learned about agent routes. For tests. */
 export function resetAgentRoutes(): void {
   deadAgentRoutes.clear();
@@ -537,11 +556,13 @@ export function requestUsesAgent(model: string, hasTools: boolean): boolean {
 }
 
 /**
- * Whether this model ID is served only on a premium account (a paid Microsoft
- * 365 Copilot seat), on either path: on any other account every turn is the
- * dead route — BotConnection apology, final `result: InternalError` — with the
- * agent and without it, so there is nothing to fall back to. Today that's the
- * included scenario's Opus (Opus 4.8; docs §24, §36).
+ * Whether this model ID can be the dead route on both paths — BotConnection
+ * apology, final `result: InternalError`, with the agent and without — so that
+ * there is nothing to fall back to. Today that's the included scenario's Opus
+ * (Opus 4.8; docs §24, §36). The name is from when M365 served it only to a
+ * premium account (a paid Microsoft 365 Copilot seat); since October 2026 M365
+ * serves it agent-less to some non-premium accounts too, and not to others
+ * (§47). Microsoft decides which, on its servers, per account.
  */
 export function isPremiumOnlyModel(model: string): boolean {
   return isIncludedOpusModel(model);

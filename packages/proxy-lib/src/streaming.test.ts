@@ -1029,7 +1029,7 @@ describe("a side request that shares the session's first user message (#83)", ()
   });
 });
 
-describe("Opus 4.8 on an account that can't serve it (§24, §36)", () => {
+describe("Opus 4.8 on a non-premium account: the agent route is dead, and agent-less may be dead too (§24, §36, §47)", () => {
   const DEAD = { fullText: "", result: { value: "InternalError" } };
   const tools = [{ type: "function", function: { name: "bash", parameters: { type: "object", properties: { command: { type: "string" } } } } }];
 
@@ -1042,7 +1042,7 @@ describe("Opus 4.8 on an account that can't serve it (§24, §36)", () => {
     scripted.result = null;
     scripted.agentFlags = [];
     scripted.newConversations = 0;
-    scripted.queue = [DEAD, DEAD, DEAD];
+    scripted.queue = [DEAD, DEAD, DEAD, DEAD];
     const body = ChatCompletionRequest.parse({
       model: "claude-opus-4.8", stream: false, ...(withTools ? { tools } : {}),
       messages: [{ role: "user", content: `hello ${Math.random()}` }],
@@ -1052,17 +1052,53 @@ describe("Opus 4.8 on an account that can't serve it (§24, §36)", () => {
     const err = (await res.json()).error;
     expect(err.code).toBe("model_route_unavailable");
     expect(err.message).toContain("premium");
-    expect(scripted.newConversations).toBe(0);
   }
 
-  it("says the model is premium-only instead of 'empty response' on a tool-less (agent-less) request", async () => {
+  it("returns model_route_unavailable instead of 'empty response' on a tool-less (agent-less) request", async () => {
     await deadRoute(false);
+    // No re-send with the agent: Opus 4.8's agent route is dead wherever agent-less is.
     expect(scripted.agentFlags).toEqual([false, false, false]);
+    expect(scripted.newConversations).toBe(0);
   });
 
-  it("…and on a tool request, which keeps the agent: agent-less is dead too, so there's no fallback", async () => {
+  it("…and on a tool request, after the agent-less re-send also gets the dead route", async () => {
     await deadRoute(true);
-    expect(scripted.agentFlags).toEqual([true, true, true]);
+    expect(scripted.agentFlags).toEqual([true, false, false, false]);
+    expect(scripted.newConversations).toBe(1);
+  });
+
+  async function toolRequest(model: string) {
+    scripted.result = null;
+    scripted.texts = [];
+    scripted.agentFlags = [];
+    scripted.newConversations = 0;
+    return respond(ChatCompletionRequest.parse({
+      model, stream: false, tools, messages: [{ role: "user", content: `list files ${Math.random()}` }],
+    }));
+  }
+
+  it("on an account that M365 serves agent-less, re-sends the request agent-less after the dead agent route, and records that", async () => {
+    scripted.queue = [DEAD, { fullText: "```bash\nls\n```" }];
+    const res = await toolRequest("claude-opus-4.8");
+    expect(res.status).toBe(200);
+    expect((await res.json()).choices[0].message.tool_calls).toHaveLength(1);
+    expect(scripted.agentFlags).toEqual([true, false]);
+    expect(scripted.newConversations).toBe(1);
+    expect(scripted.texts[1]).toContain("list files");
+    scripted.queue = [{ fullText: "```bash\nls\n```" }];
+    await toolRequest("claude-opus-4.8");
+    expect(scripted.agentFlags).toEqual([false]);
+  });
+
+  it("doesn't move tool-less Opus requests onto the agent after a transient on Opus 5.5", async () => {
+    scripted.result = null;
+    scripted.agentFlags = [];
+    scripted.queue = [DEAD, { fullText: "4" }];
+    const res = await respond(ChatCompletionRequest.parse({
+      model: "claude-opus", stream: false, messages: [{ role: "user", content: `2+2? ${Math.random()}` }],
+    }));
+    expect(res.status).toBe(200);
+    expect(scripted.agentFlags).toEqual([false, false]);
   });
 
   it("keeps the generic message for other models' empty InternalErrors", async () => {
