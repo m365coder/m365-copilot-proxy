@@ -113,7 +113,9 @@ than "we eyeballed one run." See §M (Methods) for the experimental rig.
 - §47 — M365 now serves Opus 4.8 agent-less to one non-premium account and not to another: nothing in our
   requests differs, each account always connects to one backend region, and Microsoft enables the model per account
   (F114; by region or by user, H47a); on a non-premium account the proxy sends Opus 4.8 tool requests agent-less
-  after one dead agent turn (F115)
+  after one dead agent turn (F115); the web client's own request gets the same answers, and its picker offers
+  no Claude model to either account (F116); the sign-in page can list the MFA methods, which the proxy's login
+  now handles (F117); new tone names in the premium picker (H47b)
 
 ---
 
@@ -6591,10 +6593,63 @@ nothing a probe sends changes that.
 
 ### H47a (open) — by region or by user?
 With two accounts in two regions, region and user are confounded, and the client can't choose the region
-(above). `WXPAgentMode` shows that the two accounts already get different server-side allocations of another
-feature, which fits a per-user rollout without showing it. **Probe:** a third non-premium account, in either
-region; meanwhile `tone-probe.mjs` with only the included `Claude_Opus` cell, one turn per account per day, and
-record the day that M365 starts serving the model to account 2.
+(above). The two accounts already get different server-side allocations of other features: `WXPAgentMode`, 70
+of 2,582 flags in the server-rendered page, and one `ecs.office.com` experiment in treatment on account 1 and
+in control on account 2 (F116). That fits a per-user rollout without showing it. **Probe:** a third
+non-premium account, in either region; meanwhile `scripts/tone-frames-probe.mjs` (included `Claude_Opus`), one
+turn per account per day, and record the day that M365 starts serving the model to account 2.
+
+### F116 — the web client gets the same answers, and nothing it sends or downloads separates the accounts 🟢
+Both non-premium accounts signed in to Microsoft's own web client (`m365.cloud.microsoft/chat`, headless,
+`scripts/webclient/driver.mjs`, F117), 04:35–05:20Z.
+- **The picker.** Neither account's picker offers a Claude model. Both offer Auto (`Magic`), Quick response
+  (`Chat`), Think deeper (`Reasoning`) and GPT-5.6 Sol Quick response / Think deeper (`Gpt_5_6_Chat`,
+  `Gpt_5_6_Reasoning`), from `modelSelectorMetadata` in the server-rendered page and in the `app-shell-action`
+  `RefreshNavPane` response (the user's script, which also read the premium account's: it adds Claude and Opus
+  5.5 on `Claude_Opus`, Sonnet 5.5, Sonnet 5, Model Council `Forum`, Critique `Critique`, GPT-6.1 Sol, and GPT-6
+  on `Gpt_6_Sol_Chat`). So M365 serves account 1 a model that its picker doesn't offer, and the picker is not the
+  gate.
+- **The client's own request.** Through each account's web client, with only `tone` changed from `Magic` to
+  `Claude_Opus` in the client's chat frame (Playwright `routeWebSocket`, `h.routeTone`): account 1 got "Claude
+  Opus 4.8; Anthropic; 2026-01" (`DeepLeo`), account 2 `InternalError` (`BotConnection`, 1.4 s). The two clients'
+  frames were identical in all 39 fields other than ids. Their URLs differed only in `variants`: account 2's 107
+  contain all of account 1's 98, plus four `agt_module_codeHarnessAgent_*` flags and five Copilot-licence-details
+  flags. Our probe on account 1 with account 2's 107 flags got Opus 4.8; on account 2 with account 1's 98 flags,
+  `InternalError`. So the flags a client sends don't decide it.
+- **What the client downloads.** The same on both accounts: the tenant's model providers (`enabledModels`:
+  Anthropic, OpenAI), the Opus-related flags (`enableAadOpusChatBlock`, `enableAadOpusChatThrottle`,
+  `enableFinanceAgentAnthropicGating`, `enableOfficeAgentOnlyUseClaudeTag`, all `true`, as on the premium
+  account), the release ring (`OH.RNG=ww`) and the `config.edge.skype.com` configs. Different: 70 of 2,582
+  boolean flags in the page and a few Loop experiments in the `ecs.office.com` config, none about a model.
+- **What `enableAadOpusChatBlock` does** (the client's JavaScript bundles): when a turn's `meteringLimitAlerts`
+  has `meteredResource: ModelUsage` and `meterError: Limit` for an Opus model ID, the client shows
+  `AadOpusChatBlockBanner` and marks that model's picker entry `disabled`. The client also handles
+  `OutOfCredits`, the error code `ModelQuotaExhausted` and an Opus-throttled flag. Account 2's failed turn
+  carries none of them: no alert and no error code, only `InternalError`. The bundles' model keys include
+  `ClaudeOpus47` (`opus47`) and `ClaudeOpus48` (`opus48`).
+
+This confirms F114 with Microsoft's own client: the decision is made on Microsoft's servers, per account, and
+no request we or the web client can send changes it.
+
+### F117 — the sign-in page can list the MFA methods, and the proxy's login didn't handle the list 🟢
+After the password, AAD showed "Verify your identity" with "Use a verification code", "Text +X…" and "Call +X…"
+on both non-premium accounts, for the web client and for the proxy's own client (`c0ab8ce9…`, the
+`nativeclient` flow). `driveAzureLogin` waited only for `input[name="otc"]`, so on that page it logged "mfa
+skipped" and then waited for an authorization code that never came: the proxy's automated login on these
+accounts would have failed the next time the silent refresh couldn't cover it. Clicking the option's tile
+(`[data-value="PhoneAppOTP"]`) timed out three times; its accessible button (`getByRole("button", { name: "Use a
+verification code" })`) works, and the code then goes into `#idTxtBx_SAOTCC_OTC`. `driveAzureLogin` now does
+that. **Live:** a browser login on account 1 with an empty token cache and a copy of its browser profile
+signed in in 11.9 s (account tile, password, verification-code choice, code, stay signed in); the web-client
+driver signed in on both accounts the same way. Never Text or Call: they send an SMS to or ring the account's
+phone. The older one-off scripts that copy their own login (`gateway-capture.mjs` and others) still wait for
+`input[name="otc"]` only.
+
+### H47b (open) — the picker's new tone names
+The premium account's picker sends tones that no probe here has tried: `Chat` and `Reasoning` (unversioned and
+without `Gpt_`; the validator rejects `Gpt_Chat` and `Gpt_Reasoning`, §19), `Critique`, `Forum` (Model Council,
+"GPT and Claude Deep Reasoning") and `Gpt_6_Sol_Chat` titled "GPT-6". **Probe:** `tone-probe.mjs` with these
+tones on a non-premium account (both non-premium pickers offer `Chat` and `Reasoning`), self-ID prompt.
 
 ### F115 — on a non-premium account, the proxy sends Opus 4.8 tool requests agent-less after one dead agent turn 🟢
 `Claude_Opus` is now in `PREMIUM_ONLY_AGENT_TONES`. The first tool request on `claude-opus-4.8` carries the agent;

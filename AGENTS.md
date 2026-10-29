@@ -248,6 +248,13 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   as you can into one block" cut turns per task 37% (F60), which is what Opus 5.5's budget counts. Opus 4.5 sometimes ended a tool fence with its native call
   markup (`</invoke>`, `</parameter>`…); the parser strips it (F57), on its own line or glued to the last one (Sonnet 5.5 too), don't "simplify" that away. A call the model writes again as a correction ("Oops… here is the same command") replaces the first copy rather than counting as two. Only a premium account can
   bench its agent path. See docs/hypotheses.md §24, §36, §47.
+- **To see what Microsoft's own web client does, drive it with `scripts/webclient/driver.mjs`**: one sign-in
+  per account, then one short command per step over a localhost endpoint, with every response and Chathub
+  frame logged; `scripts/webclient/diff.mjs` compares two accounts. The client's model picker is not the gate:
+  on Oct 29 2026 neither non-premium picker offered a Claude model while M365 served Opus 4.8 to one of those
+  accounts, and the client's own request with only `tone` rewritten (`h.routeTone`) got the same answers as our
+  probe on both (§47 F116). Sign-in can stop at "Verify your identity", a list of MFA methods: `driveAzureLogin`
+  and the driver choose "Use a verification code", never Text or Call (§47 F117).
 - **Entitlement-gated ≠ metered.** `gpt-6-think-deeper` (`Gpt_6_Reasoning`) and `claude-sonnet-5`
   (`Claude_Sonnet_5`) need the same paid
   scenario as Opus but carry **no** priority-access budget and throttle like everything else,
