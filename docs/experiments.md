@@ -213,6 +213,32 @@ Sonnet 5.5, which has the same sandbox and a metered budget (80/day) — §26.
 
 ---
 
+## F. Account-level gates (Opus 4.8 on non-premium accounts — §47)
+
+M365 serves Opus 4.8 agent-less to one non-premium account and not to another, and nothing we send separates
+them (F114, F116). These recipes check an account, and compare two.
+
+### E-A1 — Does M365 serve the tone to this account yet? (H47a)
+- **Run** (as each account, once a day): `M365_DEBUG=1 node scripts/tone-frames-probe.mjs` (default:
+  `Claude_Opus` on the included scenario). **Read:** `contentOrigin` `DeepLeo` and the self-ID, or
+  `BotConnection` with `finalItem.result.value: "InternalError"`. **Cost:** 1 turn.
+
+### E-A2 — What separates two accounts, without a model turn?
+- **Run** (as each account): `node scripts/entitlements-probe.mjs > ent.json` (licences, plans, groups) and
+  `node scripts/region-probe.mjs` (backend region). **Read:** diff the two `ent.json`; the region lines.
+  **Cost:** no turn. The outputs name the account's groups: keep them out of the repo.
+
+### E-A3 — Does the web client's own request change the answer? (F116)
+- **Run** (as each account, from its checkout): `OUT=<dir> PORT=<port> TOKEN=<random> node
+  scripts/webclient/driver.mjs`, then through `scripts/webclient/drive.sh <port> <token>`: sign in
+  (`h.bg("login", …)`, see the driver's header), `h.html("chat-page")`, `h.routeTone("Claude_Opus")`,
+  `h.bg("send", () => h.send("<self-ID prompt>"))`, `quit`. **Read:**
+  `node scripts/webclient/analyze.mjs <dir>` (the client's frame, the tone sent, the final result) and
+  `node scripts/webclient/diff.mjs <dir A> <dir B>` (request, ECS configs, page flags, picker).
+  **Cost:** 1 turn per account; the first sign-in per account needs its TOTP secret (F117).
+
+---
+
 ## Adding an experiment
 
 1. State the hypothesis + falsification criterion in `hypotheses.md`.
