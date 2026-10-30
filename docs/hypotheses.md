@@ -116,6 +116,12 @@ than "we eyeballed one run." See §M (Methods) for the experimental rig.
   after one dead agent turn (F115); the web client's own request gets the same answers, and its picker offers
   no Claude model to either account (F116); the sign-in page can list the MFA methods, which the proxy's login
   now handles (F117); new tone names in the premium picker (H47b)
+- §48 — the Excel agent's models over AugLoop, with our own Entra ID token (F118): Chat only and the
+  document's sensitivity label (F119), the client's flights name each slot's model (F120), the saved agent
+  state names the model where self-IDs don't (F121), the agent is a containerized Copilot agent under
+  Excel's prompt (F122) that keeps the conversation across turns (F123), Opus 5.5 there has its own
+  40-a-day limit (F124), and under `relay_onepass_first` it drives the bench (30/30) and real pi (15/15) where
+  `baseline` sent GPT-6 Sol to its sandbox (F125); a Chat-only turn needs no label once SetClp is answered (F126)
 
 ---
 
@@ -6668,3 +6674,142 @@ returned `InternalError` for the agent turn in 3.9 s; on the agent-less re-send 
 PASS, 7.4 s and 8.8 s. On that account agent-less is the only path, so it has the costs that F90 and F91 measured
 agent-less on the premium account: 22% more real-pi turns, and a code interpreter of its own, which
 `relay_batch`'s user-voice note keeps the model out of.
+
+## 48. Oct 30 2026 — the Excel agent's models over AugLoop
+
+**Question.** The open-source `augloop-copilot-proxy` reaches Excel's Copilot agent over AugLoop, with
+tokens it reads from a running Windows Excel process, and picks Claude models by slot (`ClaudeSlot6`,
+`ClaudeSonnetSlot5`). Can the proxy reach those slots with the Entra ID login it already has, which
+slot is which model, and do they drive a coding loop?
+
+**How.** On a premium account: Excel for the web, driven with `scripts/webclient/driver.mjs` — a new
+blank workbook, the Copilot pane switched to "Chat only", Claude Opus 5.5, two turns — recording the
+AugLoop frames, the token requests (client ID and scope only) and the pane's JavaScript bundles. Then
+probes from Node, `scripts/augloop-probe.mjs` once the core had the path, `proxy-verify`, and two
+sweeps. API doc §13 has the protocol.
+
+### F118 — our own Entra ID client gets the AugLoop token silently 🟢
+`acquireTokenSilent` with the proxy's client (`c0ab8ce9…`) gives a token for `https://augloop.office.com/.default`,
+`…/v2/.default` and the service's app ID: a JWE (`alg: dir`, `enc: A256CBC-HS512`, ~3.4k chars), the kind of
+token Excel presents. Excel for the web asks for `https://augloop.office.com/v2/.default` with its own client,
+through SharePoint's broker. `augloop.svc.cloud.microsoft` is a host, not a resource (`AADSTS500011`). The
+session took our token in `TokenProvisionMessage`, and `TokenProvisionResponse.tokenExpirationSeconds` was the
+token's remaining life (16 to 82 minutes in the sessions logged), not the ~4 minutes the reference project
+works around.
+Nothing has to be read from an Excel process.
+
+### F119 — Chat only, and the label a labelling tenant wants 🟢
+Excel's mode menu ("Allow editing" / "Plan" / "Chat only") sets `documentConfig.isReadOnly: true` with
+`readOnlyReason: 21` for "Chat only", and the agent's system prompt then says it is in Chat-only mode and
+can't modify the workbook. This tenant requires a sensitivity label before a document is edited; Excel sends
+the document's label in every turn (`documentConfig.sensitivityLabel: {id, priority}`) and answers each
+`SetClpAnnotation` with `{success: true}`. The first Node probe (the reference project's Windows-client
+messages, no label, SetClp unanswered) ended `error_clp_set_failed` after 30 s, with three SetClp requests
+unanswered. The proxy sends the label `M365_AUGLOOP_LABEL` names (default "General Business"), resolved
+against the tenant's labels from Graph (`/v1.0/me/informationProtection/sensitivityLabels`, which our Graph
+token may read), and answers SetClp.
+
+### F120 — the client's flights name each slot's model 🟢
+The server takes the slot's model from `clientMetadata.flights`. One turn each, `ClaudeSlot6` unless named,
+the model read from the saved agent state (F121):
+
+| flights sent | result |
+|---|---|
+| none | `error_internal_error` 4 s in; `LoadAgentSessionState` came with conversation ID `""` |
+| `ExcelAgent.ClaudeSlot6ModelId` only | `error_internal_error` |
+| the eight `ClaudeSlot6` flights (model IDs, labels, prompt variant, metering units) | `error_internal_error` |
+| 63 flights: those, the `OfficeAgent` ones and the container ones | `error_internal_error` |
+| the eight `ClaudeSlot6` flights + `FA000000124.AugLoop.EnableServerConversationId:True` | Opus 5.5 (`custom-substrate-anthropic-claude-opus-5-5`) |
+| `EnableServerConversationId` only | **claude-opus-4.5** |
+| `EnableServerConversationId` only, slot `ClaudeSonnetSlot5` | **gpt-5.6-sol** (`gpt-56-reasoning-sol`) |
+| Excel for the web's ~320 flights | Opus 5.5 |
+| `EnableServerConversationId`, `EnableModelMetering`, `ClaudeSlot7`'s two model IDs and metering units | Sonnet 5.5 (`custom-substrate-anthropic-claude-sonnet-5-5`) |
+
+So `EnableServerConversationId` is what the agent needs to start, and the `…<slot>ModelId` flights decide the
+model: without them `ClaudeSlot6` served Opus 4.5, and a slot the client doesn't know (`ClaudeSonnetSlot5`,
+which the reference project maps to Sonnet 5) a GPT default. The client's enum has `ClaudeSlot1`–`10`,
+`Gpt5Slot1`–`10`, `MAISlot1`–`4`, `YosemiteSlot1`–`3` and named types (`Claude`, `ClaudeOpus45`, `Gpt5`, …).
+The proxy sends, per slot, what Excel for the web's config names for it on this account (`augloop-models.ts`):
+`ClaudeSlot4` Opus 5, `ClaudeSlot6` Opus 5.5, `ClaudeSlot7` Sonnet 5.5, `Gpt5Slot4` GPT-6 Sol, `Gpt5Slot6`
+GPT-6.1 Sol, each served as named (`augloop-probe.mjs`, one turn each). Its picker hides four more slots its
+config names (`…Enabled:False`); the proxy doesn't send those.
+
+### F121 — the saved agent state names the model; self-IDs don't 🟢
+Asked which model they are, the slots answered "Claude, made by Anthropic … can't state [the version]"
+(Opus 5.5), "Claude (model version not known to me)" (Sonnet 5.5) and "GPT-5.4" (`ClaudeSonnetSlot5`, served
+gpt-56-reasoning-sol); the user's prompt asking Sonnet 5.5 for its model, maker and cutoff got "Claude Opus
+4.5; Anthropic PBC; 2025-03". The state the server hands the client to save after each turn is a
+ZIP whose `events.jsonl` has `session.start.selectedModel` and each `assistant.message`'s `model`, and every
+tool the agent ran (`tool.execution_start.toolName`). The proxy logs them after each turn (`Agent state saved
+(turn N): served by …`) and puts the model in `usage.x_m365_content_origin` (`AugLoop/<model>`).
+
+### F122 — the agent: Copilot's agent runtime in a container, under Excel's prompt 🟢
+`events.jsonl` says `producer: "copilot-agent"`, `copilotVersion: 1.0.73`, cwd `/app`, reasoning effort
+`medium`. The system prompt is Excel's (~49k chars: an Excel expert working through Office.js, then the
+Chat-only rules). Its `python_execution` tool ran in the container when the client hadn't activated
+`ExecutePythonAnnotation` (Excel for the web activates it and runs the Python in the browser): asked for
+SHA-256("abc"), `os.getcwd()` and `platform.node()`, it returned the right digest, `/app` and a
+`SandboxHost-…` name. The prompt also has a `<user-context>` block the server fills from the directory (name,
+title, office, manager), so the saved state holds it: the proxy keeps the state in memory and leaves it
+out of frame dumps.
+
+### F123 — the conversation carries across turns 🟢
+On the first turn the server assigns the conversation ID (in `LoadAgentSessionState`, then as
+`sydneyConversationId`); Excel sends it on later turns with the whole transcript in `conversation.messages`.
+After each turn the server asks the client to save the agent's state (13–58 kB), and asks for it back when it
+can't resume the session; when it can't resume it at all, it reproduces `messages` in the prompt as
+`<prior-conversation>`. Excel's second turn didn't load the state: the container still held the session.
+Recall worked 3 of 3 times (Excel for the web; Node; the core's `AugLoopConversation`, "PLUM-42", 3.7 s).
+
+### F124 — Opus 5.5 on the Excel path has its own limit: 40 turns a day 🟢
+The 41st Opus 5.5 turn of the UTC day on this path (2 in Excel for the web, 38 from probes, `proxy-verify` and
+the bench, counting only turns Opus 5.5 answered) ended `responseStatus: error_model_daily_limit`, and the
+proxy answered 429 `priority_access_exhausted` until 00:00Z. A Chathub turn right after it still had
+`ClaudeOpusQueryDaily: 40` in its `metering`, which has no `…Excel` keys: the Excel path's budget is a separate
+one, `ClaudeOpus55QueryDailyExcel` in Excel's flights. Excel's client shows an Opus limit as 40 a day or 75 a
+week. The flights name a metering unit per slot (`ClaudeSonnet55DailyExcel`, `GPT61SolQueryDailyExcel`,
+`ClaudeOpusQueryDailyExcel` for Opus 5; none for GPT-6 Sol) and the server reads them from the client. The
+reference project's flights name none for `ClaudeSlot6`. The proxy sends them as Excel does; whether the
+limit applies without them was not tested, since leaving them out to avoid it would be getting around
+Microsoft's metering.
+
+### F125 — it drives a coding loop, under a user-voice framing 🟢
+`proxy-verify --tools --multiturn --model=augloop-claude-opus-5.5`: the model called the tool on turn 1
+(9.5 s) and used its result on turn 2: PASS. Two sweeps (`phase-sweep.sh`, confab retry off,
+`M365_AVOID_THROTTLING=1`), read with `analyze-arms.mjs`; a sandbox turn is one whose saved state shows the agent
+running its own tools:
+
+| model | framing | bench | turns / task | real pi | turns / run | sandbox turns |
+|---|---|---|---|---|---|---|
+| `augloop-claude-opus-5.5` | `relay_onepass_first` | 10/10 | 2.0 | — (limit, F124) | | 0 |
+| `augloop-claude-opus-5.5` | `relay_batch` | 2/2, then F124's limit | 2.5 | | | 0 |
+| `augloop-claude-sonnet-5.5` | `relay_onepass_first` | 10/10 | 2.1 | fix-bug 5/5, multi 5/5 | 2.4, 2.8 | 0 |
+| `augloop-gpt-6-sol` | `relay_onepass_first` | 10/10 | 2.1 | fix-bug 5/5 | 2.4 | 0 |
+| `augloop-gpt-6-sol` | `relay_batch` | 10/10 | 2.1 | | | 0 |
+| `augloop-gpt-6-sol` | `baseline` | **0/10** | 1.0 | | | **10** |
+
+Under `baseline` every GPT-6 Sol task ended on its first turn in prose: it wrote and ran the files in its own
+sandbox ("Created `/home/jovyan/fizzbuzz.py` and ran it", "Created `/agent/workspace/greeting.txt`") or said the
+task's files weren't there. The user-voice framings, which name the sandbox as the wrong machine, kept every
+model out of it. `relay_onepass_first` and `relay_batch` tie on GPT-6 Sol (2.10 turns per task each, p = 1.0);
+the first is the default for the `augloop-*` models: it solved 30/30 bench tasks at 2.0–2.1 turns, nearly
+all in one block that looks, changes and checks, and 15/15 real-pi runs. Every pi run took 20–32 s.
+
+### F126 — once SetClp is answered, a Chat-only turn needs no label 🟢 (n=1)
+F119's failure had both: no label and no answer. With `M365_AUGLOOP_LABEL=none` (`augloop-gpt-6-sol`), the server
+still asked `SetClp`, the proxy answered it, and the turn succeeded. So the label matters for what the agent
+may do with the document, which Chat only already rules out; the proxy keeps sending the configured one, as
+Excel does.
+
+### H48b (open) — the other budgets, and the weekly ones
+Sonnet 5.5, GPT-6.1 Sol and Opus 5 have Excel metering units too; their sizes, and whether `…WeeklyExcel`
+binds before the daily one, are unmeasured. The proxy remembers a reported limit under the model ID until
+00:00Z (weekly: Monday).
+
+### H48c (open) — one throttle bucket or two?
+The proxy counts AugLoop turns in the same turn budget as Chathub's (`[augloop] Chat turn` lines), the
+conservative reading. **Probe:** a throttled AugLoop turn's status (`error_user_throttled`) next to the
+Chathub bucket's count.
+
+### H48d (open) — non-premium accounts
+Untested. `UserAllowedAnnotation.isAnthropicAvailable` is what the proxy checks before a Claude slot.

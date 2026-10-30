@@ -366,6 +366,10 @@ without NixOS: `nix run github:cramt/m365-copilot-proxy -- 4141`.
 | `gpt-5.3` / `gpt-5.3-think-deeper` | Gpt_5_3_* | GPT-5.3. `relay_batch`: 18/20 and 20/20 on the bench, 10/10 each driving real pi |
 | `gpt-5.2` / `gpt-5.2-think-deeper` | Gpt_5_2_* | GPT-5.2. `relay_batch`: 20/20 each on the bench, 10/10 each driving real pi |
 | `gpt-5.4-auto` / `gpt-5.3-auto` / `gpt-5.2-auto` | Gpt_5_N_Auto | Behave like `m365-copilot` on each kind of account: on a premium account each sends a chain of thought on the first turn of the bench's bug-fix task and on no other turn; on any other account on none. The version's `-quick` model sends none, its `-think-deeper` one sends it on a quarter to two thirds of turns. Defaults to `relay_onepass_first`: 10/10 each on the bench and driving real pi |
+| `augloop-claude-opus-5.5` | ClaudeSlot6 (AugLoop) | Claude Opus 5.5 through **Excel's Copilot agent**, a second service ([below](#the-excel-agents-models-augloop---a-second-service)). A limit of its own, 40 turns a day, separate from `claude-opus`'s. `relay_onepass_first`: 10/10 on the bench at 2.0 turns per task |
+| `augloop-claude-sonnet-5.5` | ClaudeSlot7 (AugLoop) | Claude Sonnet 5.5 through Excel's Copilot agent. `relay_onepass_first`: 10/10 on the bench at 2.1 turns per task, 10/10 driving real pi |
+| `augloop-gpt-6-sol` | Gpt5Slot4 (AugLoop) | GPT-6 Sol through Excel's Copilot agent; no limit seen. `relay_onepass_first`: 10/10 on the bench at 2.1 turns per task (`baseline` 0/10), 5/5 driving real pi |
+| `augloop-claude-opus-5` / `augloop-gpt-6.1-sol` | ClaudeSlot4 / Gpt5Slot6 (AugLoop) | Claude Opus 5 and GPT-6.1 Sol through Excel's Copilot agent |
 
 Bench scores are with the confab-retry **off** (`M365_NO_CONFAB_RETRY=1`), so every first-try
 give-up counts, including ones the proxy's retry would normally recover. The GPT-5.x, `m365-copilot`
@@ -597,6 +601,44 @@ went 10/10 on the bench with `relay`; it hasn't been benched with `relay_batch` 
 replaced Opus 4.5, went 30/30 with it at 2.5 turns per task.
 Override with `M365_FRAMING_VARIANT` as usual. Details: [hypotheses §24, §36](docs/hypotheses.md).
 
+### The Excel agent's models (`augloop-*`) — a second service
+
+Excel's Copilot pane has a model picker of its own, and it runs on another Microsoft service,
+**AugLoop**, not on the Copilot Chat service the other models use. The `augloop-*` model IDs reach it,
+with the proxy's own Entra ID sign-in (nothing to set up; nothing is read from a running Excel). The
+model is chosen by a **slot** (Excel's `agentModelType`); `augloop:<slot>` sends any slot as it is:
+
+| Model ID | Slot | Model | Limit |
+|---|---|---|---|
+| `augloop-claude-opus-5.5` | `ClaudeSlot6` | Claude Opus 5.5 | **40 turns a day**, Excel's own: `claude-opus`'s 40 are separate |
+| `augloop-claude-sonnet-5.5` | `ClaudeSlot7` | Claude Sonnet 5.5 | Excel's own, size not measured |
+| `augloop-claude-opus-5` | `ClaudeSlot4` | Claude Opus 5 | Excel's own, size not measured |
+| `augloop-gpt-6-sol` | `Gpt5Slot4` | GPT-6 Sol | none seen |
+| `augloop-gpt-6.1-sol` | `Gpt5Slot6` | GPT-6.1 Sol | Excel's own, size not measured |
+
+- **The slot alone doesn't pick the model.** Excel's client also sends, per slot, which model that slot
+  is, and the proxy sends what Excel's own configuration names for it. A slot it has no model for
+  (`augloop:ClaudeSonnetSlot5`, say) gets Microsoft's default: that one served GPT-6.
+- **Chat only.** Every request has Excel's "Chat only" mode, so the agent answers in chat and edits no
+  workbook. It has none: the proxy gives it an empty one.
+- **Sensitivity label.** If your tenant requires a label before a document is edited, the agent wants
+  one for its (empty) workbook: the proxy sends the label `M365_AUGLOOP_LABEL` names (default
+  `General Business`), matched against your tenant's labels.
+- **Limits.** A model's daily or weekly limit there comes back as the same 429 (`priority_access_exhausted`)
+  until midnight UTC (weekly: Monday). The proxy sends the metering settings Excel's client sends, so these
+  turns are metered as Excel's are. Their turns count in `M365_AVOID_THROTTLING`'s budget like any other.
+- **Which model answered** is in `usage.x_m365_content_origin` (`AugLoop/custom-substrate-anthropic-claude-opus-5-5`):
+  the agent's own record. Don't go by what the models say about themselves; it is often wrong.
+- **Text only:** images aren't passed on. The agent's own reasoning, when it streams any, arrives as
+  `reasoning_content`.
+
+The agent works under Excel's system prompt, in a container with a Python tool of its own (`/app`), so
+these models default to the user-voice `relay_onepass_first` framing, which asks for one block that
+looks, changes and checks. With it Opus 5.5, Sonnet 5.5 and GPT-6 Sol each solved 10/10 on the bench at
+2.0–2.1 turns per task, and Sonnet 5.5 and GPT-6 Sol solved 15/15 runs driving real pi; under the
+`<system>`-tagged `baseline` GPT-6 Sol solved none, working in its own sandbox instead.
+Details: [API doc §13](docs/m365-copilot-api.md), [hypotheses §48](docs/hypotheses.md).
+
 ## Image generation
 
 M365 Copilot generates images through a built-in server-side tool, and the core
@@ -702,6 +744,8 @@ Three token scopes are acquired:
 | `M365_GPT61_SOL_FALLBACK_MODEL` | The same for `gpt-6.1-sol` on the paid scenario (a premium account) once its GPT-6.1 Sol budget is used up — typically `gpt-6.1-sol-included`, the same model on the included scenario, unmetered. Unset by default. |
 | `M365_PAID_SEAT` | Whether this account has a paid (premium) Microsoft 365 Copilot seat: `1` or `0`. Unset, the proxy finds out from the first request that prefers the paid scenario (a licence refusal means no seat) and remembers it for the process; setting it skips that probe turn. |
 | `M365_SCENARIO` / `M365_LICENSE_TYPE` | Override the entitlement the WebSocket is opened under. Unset: `OfficeWebPaidCopilot` / `Premium` for every model on a premium account, except `claude-opus-4.8`, `claude-sonnet-4.6` and `gpt-6.1-sol-included`, which exist to stay off a quota; on any other account `OfficeWebIncludedCopilot` / `Starter`, except the models only the paid scenario serves (`claude-opus`, `gpt-6-think-deeper`, `claude-sonnet-5`, `claude-sonnet-5.5`). `scenario` is what gates the model list (and picks Sonnet 4.6 vs 5.5 for the `Claude_Sonnet` tone, Sonnet 4.6 vs 5 for `Claude_Sonnet_5`, Opus 4.8 vs 5.5 for `Claude_Opus`); `licenseType` rides along and unlocks nothing by itself. |
+| `M365_AUGLOOP_LABEL` | The sensitivity label the Excel agent's models (`augloop-*`) send with their (empty) document, for tenants that require a label before a document is edited. A label's name, display name, the start of one, or its ID, matched against your tenant's labels (read from Microsoft Graph). Default `General Business`; `none` sends no label. A tenant that has labels but none of that name fails the request with the list of its labels. |
+| `M365_AUGLOOP_HOST` | The AugLoop host the `augloop-*` models connect to (default `augloop.office.com`, the one Excel for the web uses). |
 | `M365_CACHE_FILE` | Override MSAL token cache location |
 | `M365_SECRETS_FILE` | Override credentials file location |
 | `CHROMIUM_PATH` | Path to Chromium binary for automated login |
@@ -775,6 +819,7 @@ pnpm run test:live    # Run live integration tests against M365
 - `claude-opus` needs a paid/premium seat and has its own small priority-access quota (40 turns a day, 75 a week; every tool call is a turn) that resets at midnight UTC (weekly on Monday); exhaustion surfaces as a 429, or as a switch to `M365_OPUS_FALLBACK_MODEL`. `claude-auto` on a premium account spends the same quota. `claude-opus-4.8` needs a premium account too, but has no such quota
 - `claude-sonnet-5.5` needs a paid/premium seat and has a priority-access quota of its own (80 turns a day, 150 a week), handled the same way (`M365_SONNET_FALLBACK_MODEL`); so does `claude-sonnet` on a premium account, where it is Sonnet 5.5. `claude-sonnet-5` needs the seat but has no quota
 - `gpt-6.1-sol` on a premium account spends a GPT-6.1 Sol quota (40 turns a day, 75 a week; `M365_GPT61_SOL_FALLBACK_MODEL`); `gpt-6.1-sol-included` doesn't
+- The `augloop-*` models (Excel's Copilot agent) have limits of their own: `augloop-claude-opus-5.5` 40 turns a day, separate from `claude-opus`'s, surfacing as the same 429. They take text only, answer in Excel's Chat only mode, and have no fallback model setting
 - Streaming: **tool-less** responses stream incrementally (deltas forwarded as they arrive). **Tool-calling** turns are still buffered server-side — the raw text has to be parsed for tool-call fences before it can be emitted — so those arrive as a single chunk at the end (with an immediate HTTP 200 + heartbeats so the client never times out waiting)
 
 ## License

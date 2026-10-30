@@ -115,7 +115,7 @@ hypothesis that teaches us something.
 
 | Package | Role |
 |---|---|
-| `@m365-copilot/core` | auth (MSAL+Playwright), WebSocket client, sessions, agent mgmt, tool formatting, schemas |
+| `@m365-copilot/core` | auth (MSAL+Playwright), WebSocket client, sessions, agent mgmt, tool formatting, schemas, the AugLoop (Excel agent) client |
 | `@m365-copilot/proxy-lib` | OpenAI↔M365 translation: framework-free `createApp()` fetch handler, `SessionPool`, handler, tool-call parsing |
 | `@m365-copilot/proxy` | standalone **Nitro** service / proxy binary (`m365-proxy`); file-based `routes/`, startup-auth `plugins/`, builds to `.output/` |
 | `@m365-copilot/openclaw-plugin` | OpenClaw config generator + setup CLI |
@@ -255,6 +255,19 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   accounts, and the client's own request with only `tone` rewritten (`h.routeTone`) got the same answers as our
   probe on both (§47 F116). Sign-in can stop at "Verify your identity", a list of MFA methods: `driveAzureLogin`
   and the driver choose "Use a verification code", never Text or Call (§47 F117).
+- **The Excel agent's models (`augloop-*`) go to a second service, AugLoop, not Chathub** (API doc §13,
+  hypotheses §48). A slot (`agentModelType`, e.g. `ClaudeSlot6`) picks the model only together with the
+  client's flights: `augloop-models.ts` sends each slot's `…ModelId` flights as Excel for the web's config names
+  them, and every connection sends `EnableServerConversationId` (without it every turn ends
+  `error_internal_error`; without the `…ModelId` flights a slot serves a default — `ClaudeSlot6` served
+  claude-opus-4.5). Take a new slot's flights from the web client's own session init (`scripts/webclient/driver.mjs`
+  in Excel for the web), metering units included, and don't send a model ID the account's own client doesn't.
+  Auth is an Entra ID token for `https://augloop.office.com/v2/.default` that our client gets silently; nothing
+  is read from an Excel process. Every turn is Chat only (`documentConfig.isReadOnly`, reason 21) and carries
+  the sensitivity label `M365_AUGLOOP_LABEL` names; answer every `SetClpAnnotation`, or the turn ends
+  `error_clp_set_failed`. Which model served is in the agent state the server asks the client to save
+  (`lastAgentTurnOf`), not in its self-ID, which is often wrong. AugLoop turns count in the same turn budget
+  as Chathub's (`[augloop] Chat turn` lines).
 - **Entitlement-gated ≠ metered.** `gpt-6-think-deeper` (`Gpt_6_Reasoning`) and `claude-sonnet-5`
   (`Claude_Sonnet_5`) need the same paid
   scenario as Opus but carry **no** priority-access budget and throttle like everything else,

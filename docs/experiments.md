@@ -239,6 +239,37 @@ them (F114, F116). These recipes check an account, and compare two.
 
 ---
 
+## G. The Excel agent's models over AugLoop (§48, API doc §13)
+
+The `augloop-*` models: a slot (`agentModelType`) and the flights that name its model (F120). Their turns
+count in the same turn budget; Opus 5.5 there has a limit of its own, 40 turns a day (F124).
+
+### E-X1 — Which model does each slot serve? (F120, F121)
+- **Run:** `M365_DEBUG=1 node scripts/augloop-probe.mjs augloop-claude-opus-5.5,augloop-claude-sonnet-5.5,…`
+  (or `augloop:<agentModelType>` for a slot without a model ID). **Read:** `origin=AugLoop/<model>`, the model
+  the agent's saved state names; never the reply's self-ID. **Cost:** 1 turn per model.
+
+### E-X2 — A slot's flights, from Excel for the web
+- **Run:** the web-client driver (E-A3's setup), signed in through `www.microsoft365.com/launch/excel?auth=2`;
+  attach a `page.on("websocket")` logger for `augloop` URLs through `eval`; "Create blank workbook", open
+  Copilot ("Chat with Copilot"), set the mode menu (`data-testid="EditModeToggle"`) to "Chat only", pick the
+  model, send one message. **Read:** the session init's `clientMetadata.flights` (`…<slot>ModelId`,
+  `…MeteringUnit.<slot>`, `…AgentMode.<slot>Enabled`) and the chat signal's `agentModelType`.
+  **Cost:** 1 turn; the workbook is a new file in the account's OneDrive, and a tenant that requires labels
+  asks for one before the pane edits it.
+
+### E-X3 — Is the label needed once SetClp is answered? (F126: no, n=1)
+- **Run:** `M365_AUGLOOP_LABEL=none node scripts/augloop-probe.mjs augloop-gpt-6-sol`. **Read:**
+  `result=Success`, or `error_clp_set_failed` / another status in the debug log. **Cost:** 1 turn.
+
+### E-X4 — Framing sweep on the Excel agent (F125)
+- **Run:** `M365_AVOID_THROTTLING=1 TAG=<tag> PHASES='G@MODEL=augloop-gpt-6-sol:default,relay_batch,baseline,pi=fix-bug'
+  nix develop --command bash scripts/bench/phase-sweep.sh`, then `analyze-arms.mjs` on the archive. **Read:**
+  solved, turns per task, and the sandbox column (turns the agent ran its own tools). **Cost:** ~2 turns per
+  task; `augloop-gpt-6-sol` has no limit seen, `augloop-claude-opus-5.5` stops the sweep after 40 turns a day (F124).
+
+---
+
 ## Adding an experiment
 
 1. State the hypothesis + falsification criterion in `hypotheses.md`.

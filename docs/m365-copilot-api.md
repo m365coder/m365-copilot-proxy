@@ -25,6 +25,7 @@ If you read nothing else:
 6. Auth uses **MSAL PKCE with the `nativeclient` redirect**, which a real browser bounces to `/common/wrongplace` — you must scrape the auth code from the *navigation request*, not wait for the redirect to land.
 7. **Tool calling is not native.** It only works reliably if you create a **Copilot Studio agent** and reference it per request; otherwise M365 ignores tool instructions and answers in prose / hallucinates.
 8. M365 has a **"Disengaged" safety filter**: large or jailbreak-looking prompts get a `messageType:"Disengaged"` message with **empty content** — which is easy to mistake for rate limiting.
+9. Excel's Copilot agent is a **second service, AugLoop** (`wss://augloop.office.com`, §13): an Entra ID token, the model by **slot** (`ClaudeSlot6`), and the slot's model named by the **client's flights**.
 
 ---
 
@@ -674,6 +675,7 @@ Evidence (`scripts/dataverse-bot-probe.mjs`, with a `<org>.crm4.dynamics.com/.de
 | 24 | **`optionsSets` was sent empty** — leaves code-interpreter/memory/custom-instructions/image off the table. Reference impls (PyRIT, kuchris) populate it | §5/hypotheses §8 |
 | 25 | **`scenario` gates the model list.** `Gpt_6_Reasoning` is a dead route on `OfficeWebIncludedCopilot` and a real model on `OfficeWebPaidCopilot`, and so was `Claude_Opus` agent-less until October 2026 (on a premium account it is now Opus 4.8 on the included one, Opus 5.5 on the paid one, §36). `licenseType: Premium` rides along but unlocks nothing by itself. Proxy derives it per-turn from the model ID. The scenario can also change which model a tone is: `Claude_Sonnet` is Sonnet 4.6 included and Sonnet 5.5 paid (Sonnet 5, now `Claude_Sonnet_5`, until 2026-10-06). The gate says nothing about metering — GPT-6 and Sonnet 5 are gated but not separately budgeted | §5 |
 | 26 | **Priority-access caps — Opus 5.5 (40 turns/day, 75/week) and Sonnet 5.5 (80/day, 150/week), one per turn** — end the turn with `result.value: "OutOfCredits"` and a refusal that is NOT streamed — it exists only in the final item — so a stream reader sees an empty turn and every generic guard misreads it. Read the result; the proxy 429s, remembers it per budget until the reset (midnight UTC; weekly: Monday — though Sonnet 5.5's weekly key has reset daily, hyp §30), and can fall back (`M365_OPUS_FALLBACK_MODEL`, `M365_SONNET_FALLBACK_MODEL`) | §5/§15, hyp §24 F59, §26 |
+| 27 | **A second service serves the Excel agent's models (AugLoop).** Model by slot (`agentModelType: ClaudeSlot6`…), and the **client's flights name the slot's model**: without `…<slot>ModelId` a slot serves a default (`ClaudeSlot6` → claude-opus-4.5), and without `EnableServerConversationId` every turn ends `error_internal_error`. Auth is an Entra ID token in `TokenProvisionMessage`; a tenant that requires sensitivity labels needs `documentConfig.sensitivityLabel` and an answer to every `SetClpAnnotation` | §13, hyp §48 |
 
 ---
 
@@ -689,6 +691,8 @@ Evidence (`scripts/dataverse-bot-probe.mjs`, with a `<org>.crm4.dynamics.com/.de
 | `packages/core/src/schemas.ts` | Zod schemas for SignalR frames & JWT claims |
 | `packages/proxy-lib/src/handler.ts` | OpenAI ↔ M365 translation, `SessionPool`, delta mode, tool-call parsing, one-call-per-turn, empty-response fail-fast |
 | `packages/core/src/tools.ts` | Tool-definition prompt, real-tool few-shot, `parseToolCalls` (bare + fenced, strips `confidence`/`final`) |
+| `packages/core/src/augloop.ts` | The Excel agent over AugLoop (§13): `AugLoopConnection` (session, token provisioning, cancel), `AugLoopConversation` (turns, transcript, saved agent state → `CopilotStream`), sensitivity label, response statuses |
+| `packages/core/src/augloop-models.ts` | `augloop-*` model IDs → slot (`agentModelType`) and the flights that name each slot's model |
 
 ### Reverse-engineering probe scripts (`scripts/`, read-only)
 
@@ -709,6 +713,7 @@ Evidence (`scripts/dataverse-bot-probe.mjs`, with a `<org>.crm4.dynamics.com/.de
 | `region-probe.mjs` | Handshake-only Chathub connections (no turn): which backend region serves this account, with and without a session key |
 | `tone-frames-probe.mjs` | One turn on one tone with every frame kept; overrides for tone, scenario, `variants`, optionsSets. 1 turn |
 | `entitlements-probe.mjs` | Licences, assigned plans and groups from Graph, with the silent token only |
+| `augloop-probe.mjs` | The Excel agent's models through the proxy's own AugLoop path: per model ID (or `augloop:<agentModelType>`), the turns of `TURNS` in one conversation, each answer, its result, and the model the agent's saved state names (§13). 1 turn per model per entry |
 
 Run unsandboxed with `CHROMIUM_PATH` set and `M365_NO_INTERACTIVE=1`. They reuse the stored MSAL cache / automated login. Output (screenshots, captured network) lands in `scripts/*-out/` (gitignored).
 
@@ -721,6 +726,177 @@ another directory, relative to `~/.config/opencode-m365/`). Use this in producti
 to catch a regression mid-flight: ship the suspect NDJSON to a dev box and
 diff against a known-good capture. Negligible overhead since the data is
 already in memory.
+
+The AugLoop path (§13) dumps one file per connection, `augloop-<uuid>.ndjson`, with
+tokens and the agent's saved state (`stateData`, which holds the user's profile)
+replaced by their lengths.
+
+---
+
+## 13. AugLoop: the Excel agent's models
+
+Excel for the web's Copilot pane (Agent Mode) doesn't use Chathub. It talks to **AugLoop**,
+Office's service for in-document features, over `wss://augloop.office.com`, and picks its
+model by a **slot**, `agentModelType` (`ClaudeSlot6`, `Gpt5Slot4`, …), not by a tone. The proxy
+serves these as `augloop-*` model IDs (`augloop-models.ts`, `augloop.ts`). Everything below was
+captured from Excel for the web's own client with the web-client driver, then reproduced from
+Node (hypotheses §48). Observed 2026-10-30.
+
+### Authentication
+
+An **Entra ID token for `https://augloop.office.com/v2/.default`**: our first-party client
+(`c0ab8ce9-…`, §2) gets it silently from the cached refresh token, like the designerapp token
+(hypotheses §14). It is a JWE (`alg: dir`, `enc: A256CBC-HS512`), opaque to us, and it is the same kind of
+token Excel's clients present: the Windows Excel client keeps one in its process memory, which is
+what the open-source `augloop-copilot-proxy` reads from it. Excel for the web asks for this scope
+with its own client, through SharePoint's broker. `https://augloop.office.com/.default` and the
+service's app ID give the same token; `augloop.svc.cloud.microsoft` is a host, not a resource
+(`AADSTS500011`). The token goes to the session in a `TokenProvisionMessage` (below), and the
+reply says how long the session may use it (`tokenExpirationSeconds`: what the token has left).
+
+### Session
+
+Every message is JSON with a type header, `H_: {T_: <type>, B_: [<base types>]}`, a `messageId`
+(`c<n>` from the client, `s<n>` from the server) and a correlation vector `cv`. Text frames;
+some server frames are binary, the same JSON after a type byte (3) and a 4-byte length. Both
+sides send `~` every 30 s.
+
+1. **Main endpoint**, `wss://augloop.office.com/`: send `~` and an
+   `AugLoop_Session_Protocol_SessionInitMessage` (`protocolVersion: 2`, `clientMetadata`: `appName:
+   "Excel"`, `appPlatform: "Web"`, `appVersion`, `uiLanguage`, `releaseAudienceGroup`, `sessionId`,
+   **`flights`** (below), `runtimeVersion`, `docSessionId`). The reply, a
+   `SessionInitResponse`, names the session's **slice**: `sliceUrl`
+   (`wss://<region>-pa<NN>-pub.augloop.office.com/v2/?x-origin=…`), `sessionKey`, `origin`, plus
+   an anonymous session token and the session's limits (`maxRPS`, `maxBPS`).
+2. **Slice**: send `~`, the same init with `sessionKey` and `origin`, then
+   `TokenProvisionMessage {authToken: <Entra token>, version: 1}` → `TokenProvisionResponse
+   {tokenExpirationSeconds}`. A new token later is another `TokenProvisionMessage` on the same
+   session.
+3. Activate the annotation types the client will read or answer, one
+   `AnnotationActivationMessage {annotationType, token: "<type>-<n>"}` each.
+4. `CheckPermissionSignal` → `UserAllowedAnnotation {isAnthropicAvailable, isOutOfCredits,
+   isOpenAiSubprocessorAvailable, allowedModelProvidersGuids, …}` (or `ForbiddenAnnotation`).
+
+Every server message with an `s…` id gets `AugLoop_Session_Protocol_Response {messageId}` back.
+Excel for the web sends no licensing check (`CheckCopilotLicenseSignal`); the older Windows client
+the reference project copied does.
+
+### A turn
+
+The client sends a `SyncMessage` with one `SignalOperation`: `parentPath: ["Signal",
+"AugLoop_ExcelAgentExperimental_ExcelAgentExperimentalSignal"]`, one item `{id, contextId,
+body}`. In the body:
+
+| Field | Value |
+|---|---|
+| `query` | the user's message |
+| `queryId` | a UUID; the server's annotations for this turn carry it |
+| `conversation` | `{conversationId, messages, grantedEntityPermissions: []}`. `conversationId` is `""` on the first turn and the server's ID after it (`sydneyConversationId` in the final output). `messages` is the **whole transcript**, `{role: "user"\|"assistant", content}`, the new message last |
+| `agentModelType` | the slot |
+| `documentConfig` | `{documentId, documentName, documentType: "xlsx", documentUrl, isReadOnly, readOnlyReason, sensitivityLabel: {id, priority}}`. **Chat only**, the mode menu's "Copilot will respond in chat only", is `isReadOnly: true` with `readOnlyReason: 21`; the system prompt then says so and forbids workbook edits |
+| `documentState` | the workbook's fingerprint and selection (`"sheets:1\|Sheet1:empty"`, `Sheet1!A1`) |
+| `featureOverrides` | `WebSearchEnabled`, `EnterpriseSearchEnabled`, `AgentInContainerEnabled`, … |
+| `clientConfig` | `clientName: "Aurora"`, locale, `hostAriaSessionId` |
+| also | `isAutoModeSelected`, `isClaudeAvailable` (`false`, even for a Claude slot), `enabledSkills`, `connections`, `installedAddIns`, `registeredFormulas`, `changeHistoryEnabled`, `allowResume: true` |
+
+During the turn the server asks the client for things, as **execution-correlated annotations**
+(`workflowExecutionCorrelation: {callerMessageId, workflowExecutionId}`), and waits for an
+`ExecutionCorrelatedClientResponse {workflowExecutionCorrelation, finalResponse: true, content}`.
+The content's type is the annotation's with `ResponseObject` for `Annotation`:
+
+| Annotation | What the server wants | Excel's answer (and the proxy's) |
+|---|---|---|
+| `RunScriptAnnotation` | an Office.js script run against the workbook; the first reads its structure for the agent's context | `{scriptResponse: {result: <JSON>, resultType: "returnResult", consoleOutput: ""}, timeout: false}`. The proxy returns Excel's own reply for an empty one-sheet book |
+| `SetClpAnnotation` | the document's sensitivity label applied | `{success: true}`. Unanswered, the turn ends `error_clp_set_failed` after about 30 s |
+| `LoadAgentSessionStateAnnotation {conversationId}` | the agent's saved state, when the server can't resume it | `{success: true, stateData?}` |
+| `SaveAgentSessionStateAnnotation {conversationId, stateData}` | the agent's state kept by the client | `{success: true}` |
+| `ExecutePythonAnnotation` | the agent's Python run by the client | Excel for the web runs it in the browser. Not activated, it never comes: the agent's container runs it (`/app`) |
+
+The answer comes as **`OutputAnnotation`s** for the `queryId`: `streamedChunk {type: "response"
+| "thoughts", text, newMessage}` (or `chunkType` / `chunkContent`), `responseStatus` (`partial`,
+then `complete` or an error), and at the end `finalResponse {assistantResponse, thoughts,
+responseId}` with `sydneyConversationId`. **Stop** is an `Internal_GetAnnotationsRequestMessage`
+for `CancelQueryResponseAnnotation` carrying an empty `CancelQuerySignal`; it stops the session's
+running query.
+
+### The agent, and its state
+
+The agent is GitHub Copilot's agent runtime (`producer: "copilot-agent"`) in a container (cwd
+`/app`), under Excel's system prompt (about 49k characters), with Office.js tools and a
+`python_execution` tool that runs in the container. Its state is a ZIP (`events.jsonl`,
+`session.db`, `workspace.yaml`, `checkpoints/`), which the server asks the client to save after
+every turn and to load when the container is gone. When it can't resume the agent's session it
+puts `conversation.messages` into the prompt as `<prior-conversation>`. The prompt also carries a
+`<user-context>` block the server builds from the directory (the user's name, title, office and
+manager), so the state holds it too: the proxy keeps the state in memory only, and its frame dumps
+leave it out.
+
+**`events.jsonl` names the model each message came from** (`assistant.message.data.model`:
+`custom-substrate-anthropic-claude-opus-5-5`) and every tool the agent ran
+(`tool.execution_start.data.toolName`). That is the server's record. **Don't trust a self-ID**:
+the models answer "Claude, version not known to me", or name another model (a GPT fallback said
+GPT-5.4 while its record said `gpt-56-reasoning-sol`).
+
+### Flights pick the model
+
+The server reads the slot's model from **the client's `flights`**, the `name:value;` list in
+`clientMetadata`. Excel for the web gets ~320 of them from its config service, in the page. Two
+kinds matter:
+
+- **`Microsoft.Office.Excel.FA000000124.AugLoop.EnableServerConversationId:True`.** Without it the
+  server never assigns a conversation ID (`LoadAgentSessionState` comes with `""`) and every turn
+  ends `error_internal_error`.
+- **`…ExcelAgent.<slot>ModelId:<model>`** and the container agent's
+  **`…OfficeAgent.OfficeAgent.<slot>ModelId`**. Without them a slot serves a default: `ClaudeSlot6`
+  served claude-opus-4.5. With them it serves what they name.
+
+The slots Excel for the web's picker offers a premium account, with what its config names for
+them:
+
+| Picker | Slot | Model | Metering units |
+|---|---|---|---|
+| Claude › Opus 5 | `ClaudeSlot4` | `custom-substrate-anthropic-claude-opus-5` | `ClaudeOpusQueryDailyExcel` / `…WeeklyExcel` |
+| Claude › Claude Opus 5.5 | `ClaudeSlot6` | `custom-substrate-anthropic-claude-opus-5-5` | `ClaudeOpus55QueryDailyExcel` / `…WeeklyExcel` |
+| Claude › Sonnet 5.5 | `ClaudeSlot7` | `custom-substrate-anthropic-claude-sonnet-5-5` | `ClaudeSonnet55DailyExcel` / `…WeeklyExcel` |
+| GPT › GPT-6 Sol | `Gpt5Slot4` | `custom-substrate-gpt-6-sol` | — |
+| GPT › GPT-6.1 Sol | `Gpt5Slot6` | `custom-substrate-gpt-61-sol` | `GPT61SolQueryDailyExcel` / `…WeeklyExcel` |
+
+Its config also names slots its picker hides (`…<slot>Enabled:False`): GPT-5.5 (`Gpt5Slot1`),
+GPT-5.6 (`Gpt5Slot2`), GPT-6 Astra (`Gpt5Slot5`), Opus 4.7 (`ClaudeSlot1`). The client's enum has
+`ClaudeSlot1`–`10`, `Gpt5Slot1`–`10`, `MAISlot1`–`4`, `YosemiteSlot1`–`3` and a few named types;
+the server accepts other strings too and serves a default for them: `ClaudeSonnetSlot5`, which the
+reference project maps to Sonnet 5, served GPT-5.6 Sol.
+
+The metering units ride in the same flights (`Microsoft.Office.Excel.AugLoop.DailyMeteringUnit.<slot>`,
+`WeeklyMeteringUnit.<slot>`, and `EnableModelMetering:True`) and are separate keys from Chathub's
+(`ClaudeOpusQueryDaily`, §5). When the server reports an Opus limit, the client's UI shows it as
+40 turns a day or 75 a week. The proxy sends a slot's flights as Excel's client sends them,
+metering units included.
+
+### Response statuses
+
+From the client's own list; the proxy maps them onto the `result` values the handler already acts on:
+
+| `responseStatus` | Proxy |
+|---|---|
+| `complete` | `Success` |
+| `error_throttled`, `error_user_throttled`, `error_scenario_throttled`, `error_rdx_throttled`, `error_llm_scenario_throttled`, `error_metering_enterprise_model_capacity_throttled`, `error_metering_enterprise_at_capacity` | `Throttled` → 429 `m365_throttled`, counted by the turn budget |
+| `error_claude_opus_daily_limit` / `_weekly_limit`, `error_model_daily_limit` / `_weekly_limit`, `error_model_limit`, `error_metering_consumer_credits_exhausted` | `OutOfCredits` → 429 `priority_access_exhausted` until the reset, remembered under the model ID |
+| `error_rai_policy`, `error_rai_policy_violation`, `error_dlp_*` | `Disengaged` |
+| `error_user_not_licensed`, `error_context_exhausted` | the request fails (502) with the reason |
+| `error_query_canceled*`, `cancelled` | the turn was stopped |
+| any other `error_*` (`error_internal_error`, `error_workflow_timeout`, `error_container_unavailable`, `error_clp_set_failed`, …) | `InternalError` → one re-send in a fresh conversation |
+
+### Sensitivity labels
+
+A tenant can require a label before a document is edited. Excel for the web sends the document's
+label in every turn (`documentConfig.sensitivityLabel: {id, priority}`) and answers `SetClp`. The
+proxy sends the label `M365_AUGLOOP_LABEL` names (default `General Business`; a name, a display name,
+the start of one, or an ID; `none` sends none), matched against the tenant's labels from Graph,
+`GET /v1.0/me/informationProtection/sensitivityLabels` (our client's Graph token has
+`InformationProtectionPolicy.Read`). A tenant that has labels but none of that name fails the
+request with the list of its labels. What a Chat-only turn can't do without is the `SetClp` answer:
+with that answered, a turn without a label passed too (hypotheses §48 F126).
 
 ---
 
