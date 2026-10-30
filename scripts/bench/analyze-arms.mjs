@@ -28,7 +28,9 @@
 //             "Coding and executing" (GPT-6, Sonnet 5), "Analysing" / "Analysis"
 //             (Sonnet 4.6's code interpreter, which the old text-only match
 //             missed: hypotheses §30). Don't count `contentOrigin: CodeGenerator`
-//             instead; most such turns lack it.
+//             instead; most such turns lack it. The Excel agent's models (AugLoop)
+//             have no such frames: the proxy logs `[augloop] Agent state saved …;
+//             the agent ran its own tools: …` for a turn that ran its container's tools.
 //   diseng / jb  turns with a Disengaged message / a JailBreakClassifier origin
 // If the number of conversations doesn't match the number of tasks, the arm's
 // wire totals still print but its rows get path `?`.
@@ -134,7 +136,11 @@ function piRows(dir, a) {
 
 // --- wire --------------------------------------------------------------------
 
-const emptyWire = () => ({ runs: [], cids: new Set(), corr: [], fallback: 0, internalError: 0, throttled: 0, outOfCredits: 0, wsError: 0, disengagedRetry: 0 });
+// The Excel agent's turns (AugLoop) have no Chathub frames to read; the proxy logs
+// what they did instead: `Agent state saved (turn N): …; the agent ran its own
+// tools: …` is a sandbox turn, `Turn result: Disengaged (…)` a policy refusal
+// (hypotheses §48).
+const emptyWire = () => ({ runs: [], cids: new Set(), corr: [], fallback: 0, internalError: 0, throttled: 0, outOfCredits: 0, wsError: 0, disengagedRetry: 0, augloopSandbox: 0, augloopDisengaged: 0 });
 // The Opus priority-access wall (§24 F55): the turn's final result is OutOfCredits.
 // Older proxies didn't recognise it (the refusal text isn't streamed) and returned
 // "empty response" instead, so read the turn result, not only the client's error.
@@ -158,7 +164,9 @@ export function conversations(log) {
       cur.cids.add(m[2]);
     } else if ((m = line.match(/WS send: .*"clientCorrelationId":"([0-9a-f-]+)"/))) {
       cur.corr.push(m[1]);
-    } else if (line.includes("Agent route dead")) cur.fallback++;
+    } else if (/\[augloop\] .*; the agent ran its own tools: /.test(line)) cur.augloopSandbox++;
+    else if (/\[augloop\] Turn result: Disengaged/.test(line)) cur.augloopDisengaged++;
+    else if (line.includes("Agent route dead")) cur.fallback++;
     else if (line.includes("Turn result: InternalError")) cur.internalError++;
     else if (/Upstream Throttled|Turn result: Throttled/.test(line)) cur.throttled++;
     else if (line.includes("Turn result: OutOfCredits")) cur.outOfCredits++;
@@ -199,8 +207,8 @@ export function analyzeArm(a) {
       turns: c.runs.length,
       agent: c.runs.filter(Boolean).length,
       agentless: c.runs.filter((x) => !x).length,
-      sandbox: turnFlags.filter((x) => x.sandbox).length,
-      disengaged: turnFlags.filter((x) => x.disengaged).length,
+      sandbox: turnFlags.filter((x) => x.sandbox).length + c.augloopSandbox,
+      disengaged: turnFlags.filter((x) => x.disengaged).length + c.augloopDisengaged,
       jailbreak: turnFlags.filter((x) => x.jailbreak).length,
       internalError: c.internalError, fallback: c.fallback, wsError: c.wsError, throttled: c.throttled,
       outOfCredits: c.outOfCredits,
