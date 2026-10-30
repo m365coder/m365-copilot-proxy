@@ -209,7 +209,7 @@ export class WordAgentConversation {
   }
 
   private async open(signal?: AbortSignal): Promise<AugLoopConnection> {
-    const c = await AugLoopConnection.open(WORD_AGENT_FLIGHTS.map((f) => `${f};`).join(""), await this.opts.getToken(), signal, WORD_CLIENT);
+    const c = await AugLoopConnection.open(WORD_AGENT_FLIGHTS.map((f) => `${f};`).join(""), await this.opts.getToken(), signal, WORD_CLIENT, this.opts.onFrame);
     this.connection = c;
     return c;
   }

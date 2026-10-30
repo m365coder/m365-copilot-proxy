@@ -358,7 +358,12 @@ export class AugLoopConnection {
   allowed: Json | null = null;
   tokenExpiresAt = 0;
 
-  private constructor(readonly flights: string, private readonly dumpId: string, readonly client: AugLoopClient) {}
+  private constructor(
+    readonly flights: string,
+    private readonly dumpId: string,
+    readonly client: AugLoopClient,
+    private readonly onFrame?: (dir: "send" | "recv", frame: string) => void,
+  ) {}
 
   get alive(): boolean {
     return !this.closed && this.socket?.ws.readyState === WebSocket.OPEN;
@@ -368,8 +373,15 @@ export class AugLoopConnection {
   nextCv(): string { return `${this.baseCv}.${++this.cvN}`; }
   nextContextId(): string { return `C${++this.ctxN}`; }
 
-  static async open(flights: string, token: string, signal?: AbortSignal, client: AugLoopClient = EXCEL_CLIENT): Promise<AugLoopConnection> {
-    const c = new AugLoopConnection(flights, `augloop-${randomUUID()}`, client);
+  /** `onFrame` gets every frame, redacted as frame dumps are (redactFrame). */
+  static async open(
+    flights: string,
+    token: string,
+    signal?: AbortSignal,
+    client: AugLoopClient = EXCEL_CLIENT,
+    onFrame?: (dir: "send" | "recv", frame: string) => void,
+  ): Promise<AugLoopConnection> {
+    const c = new AugLoopConnection(flights, `augloop-${randomUUID()}`, client, onFrame);
     try {
       await c.connect(token, signal);
       return c;
@@ -411,6 +423,7 @@ export class AugLoopConnection {
         send: (obj) => {
           const raw = typeof obj === "string" ? obj : JSON.stringify(obj);
           dumpFrame(this.dumpId, "send", raw);
+          if (this.onFrame && raw !== "~") this.onFrame("send", redactFrame(raw));
           ws.send(raw);
         },
       };
@@ -424,6 +437,7 @@ export class AugLoopConnection {
         const text = raw.toString("utf8");
         if (!text || text === "~") return;
         dumpFrame(this.dumpId, "recv", text);
+        if (this.onFrame) this.onFrame("recv", redactFrame(text));
         let m: Json;
         try { m = JSON.parse(text); } catch { return; }
         onMessage(m);
@@ -818,6 +832,8 @@ export interface AugLoopConversationOptions {
   getGraphToken: () => Promise<string | null>;
   /** Deletes chats from Copilot history (deleteAgentChats). Given for a temporary chat. */
   deleteChats?: (conversationIds: string[]) => Promise<void>;
+  /** Every frame of the conversation's connections, redacted as frame dumps are: for probes that keep them. */
+  onFrame?: (dir: "send" | "recv", frame: string) => void;
 }
 
 /**
@@ -923,6 +939,7 @@ export class AugLoopConversation {
   private turns = 0;
   /** The models the last saved agent state names (lastAgentTurnOf). */
   private lastServed: string[] = [];
+  private lastState: string | null = null;
 
   constructor(private readonly opts: AugLoopConversationOptions) {
     this.deleter = opts.deleteChats ? new ChatDeleter(opts.deleteChats) : null;
@@ -935,6 +952,11 @@ export class AugLoopConversation {
   /** The server's ID for this conversation, once it has assigned one. */
   get serverConversationId(): string {
     return this.conversationId;
+  }
+
+  /** The agent state the server last asked the client to save: a base64 ZIP (lastAgentTurnOf reads it). For probes. */
+  get lastSavedState(): string | null {
+    return this.lastState;
   }
 
   close(): void {
@@ -990,7 +1012,7 @@ export class AugLoopConversation {
 
   /** A new connection, with the conversation's agent state handled on it for as long as it lives. */
   private async connect(flights: string, signal?: AbortSignal): Promise<AugLoopConnection> {
-    const c = await AugLoopConnection.open(flights, await this.opts.getToken(), signal);
+    const c = await AugLoopConnection.open(flights, await this.opts.getToken(), signal, EXCEL_CLIENT, this.opts.onFrame);
     this.connection = c;
     // Load and Save carry the conversation's ID, not a turn's query ID, and a Save
     // can come after the turn's last output.
@@ -1009,6 +1031,7 @@ export class AugLoopConversation {
         } else {
           if (b.conversationId && typeof b.stateData === "string") {
             this.states.set(b.conversationId, b.stateData);
+            this.lastState = b.stateData;
             const t = lastAgentTurnOf(b.stateData);
             this.lastServed = t.models;
             log.info(`Agent state saved (turn ${this.turns - 1}): served by ${t.models.join(", ") || "?"}${t.tools.length ? `; the agent ran its own tools: ${t.tools.join(", ")}` : ""}`);
