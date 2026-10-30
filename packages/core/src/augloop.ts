@@ -21,7 +21,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
-import type { CopilotStream } from "./copilot.js";
+import { decodeJwt, type CopilotStream } from "./copilot.js";
 import { augLoopModelOf, isClaudeAugLoopModel } from "./augloop-models.js";
 import { foldStreamText } from "./session.js";
 import { createLogger, trunc, FRAME_DIR } from "./log.js";
@@ -608,6 +608,116 @@ export function applyOutput(out: AugLoopTurnStream, b: Json): AugLoopOutcome | n
   return typeof b.responseStatus === "string" ? outcomeOfStatus(b.responseStatus) : null;
 }
 
+// --- History -----------------------------------------------------------------------------
+
+// The server saves every Excel agent chat in Copilot history, and AugLoop has no
+// temporary-chat mode (hypotheses §48 F128). Excel's history pane lists and deletes
+// these chats here.
+const HISTORY_URL = "https://substrate.office.com/m365Copilot/";
+
+/** How long after a turn, with no next turn started, a temporary chat is deleted. */
+export const HISTORY_DELETE_DELAY_MS = 5_000;
+
+/** Every conversation's scheduled deletion, until it has run or a next turn cancelled it. */
+const scheduledDeletions = new Set<Promise<void>>();
+
+/**
+ * Resolves once every temporary chat's scheduled deletion from history has run,
+ * at most HISTORY_DELETE_DELAY_MS and a request after the last turn. A process
+ * about to exit awaits it; otherwise the chats of its last turns stay in history.
+ */
+export async function chatDeletionsSettled(): Promise<void> {
+  while (scheduledDeletions.size > 0) await Promise.all([...scheduledDeletions]);
+}
+
+/**
+ * Delete Excel agent chats from Copilot history, as Excel's own Delete does.
+ * `token` is the Chathub token (getToken).
+ */
+export async function deleteExcelChats(token: string, conversationIds: string[]): Promise<void> {
+  const { oid, tid } = decodeJwt(token);
+  const res = await fetch(`${HISTORY_URL}DeleteConversation`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "X-ClientRequestId": randomUUID(),
+      "X-Scenario": "ExcelSidepaneWorkCopilot",
+      "X-AnchorMailbox": `Oid:${oid}@${tid}`,
+      "X-RoutingParameter-SessionKey": oid,
+    },
+    body: JSON.stringify({ conversationIdsToDelete: conversationIds, source: "excel", traceId: randomUUID() }),
+  });
+  if (!res.ok) throw new Error(`DeleteConversation: HTTP ${res.status}`);
+  const body: Json = await res.json().catch(() => null);
+  const deleted: unknown[] = body?.conversationIdsDeleted ?? [];
+  if (!conversationIds.every((id) => deleted.includes(id))) {
+    throw new Error(`DeleteConversation didn't delete them all${body?.result?.message ? ` (${body.result.message})` : ""}`);
+  }
+}
+
+/**
+ * Deletes a temporary chat from Copilot history once its turn has ended and no
+ * next turn has started for `delayMs`, so the server has saved the turn first.
+ * It deletes every conversation ID a turn ran in since the last deletion (the
+ * server moves a deleted chat's next turn to a new one, F129), and keeps those
+ * whose deletion failed for the next. A turn waits for a deletion in progress.
+ * Exported for tests.
+ */
+export class ChatDeleter {
+  private readonly due = new Set<string>();
+  private pending: { timer: ReturnType<typeof setTimeout>; settle: () => void; done: Promise<void> } | null = null;
+  private running: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly deleteChats: (conversationIds: string[]) => Promise<void>,
+    private readonly delayMs = HISTORY_DELETE_DELAY_MS,
+  ) {}
+
+  /** Before a turn: cancel the pending deletion and wait for one in progress. */
+  async turnStarting(): Promise<void> {
+    this.cancel();
+    await this.running;
+  }
+
+  /** After a turn: delete its chat once `delayMs` pass without another turn. */
+  turnEnded(conversationId: string): void {
+    this.cancel();
+    if (conversationId) this.due.add(conversationId);
+    if (this.due.size === 0) return;
+    let settle!: () => void;
+    const done = new Promise<void>((resolve) => { settle = resolve; });
+    scheduledDeletions.add(done);
+    void done.then(() => scheduledDeletions.delete(done));
+    const timer = setTimeout(() => {
+      this.pending = null;
+      const ids = [...this.due];
+      this.running = this.deleteChats(ids).then(
+        () => {
+          for (const id of ids) this.due.delete(id);
+          log.info(`Deleted chat ${ids.join(", ")} from Copilot history (temporary chat)`);
+        },
+        (err: Error) => log.info(`Couldn't delete chat ${ids.join(", ")} from Copilot history: ${err.message}`),
+      );
+      void this.running.then(settle);
+    }, this.delayMs);
+    this.pending = { timer, settle, done };
+  }
+
+  /** Resolves once no deletion is pending or running. */
+  async idle(): Promise<void> {
+    await this.pending?.done;
+    await this.running;
+  }
+
+  private cancel(): void {
+    if (!this.pending) return;
+    clearTimeout(this.pending.timer);
+    this.pending.settle();
+    this.pending = null;
+  }
+}
+
 // --- Conversation ------------------------------------------------------------------------
 
 export interface AugLoopConversationOptions {
@@ -615,6 +725,19 @@ export interface AugLoopConversationOptions {
   getToken: () => Promise<string>;
   /** A Graph token, for the tenant's sensitivity labels. */
   getGraphToken: () => Promise<string | null>;
+  /** Deletes chats from Copilot history (deleteExcelChats). Given for a temporary chat. */
+  deleteChats?: (conversationIds: string[]) => Promise<void>;
+}
+
+/**
+ * The messages a turn sends: its own (the transcript's last), or the whole
+ * transcript on a new connection. The server's agent session carries the
+ * conversation, but a new connection may not resume it (a deleted chat's never
+ * is), and then the server reads the transcript (hypotheses §48 F129). Exported
+ * for tests.
+ */
+export function turnMessages(transcript: readonly { role: string; content: string }[], newConnection: boolean): { role: string; content: string }[] {
+  return (newConnection ? transcript : transcript.slice(-1)).map((m) => ({ ...m }));
 }
 
 /**
@@ -690,21 +813,29 @@ export function buildChatSignal(opts: {
 
 /**
  * One conversation with the Excel agent. Turns go one at a time over a
- * connection opened on the first and reused while it lives; the server's
- * conversation ID, the transcript (`messages`) and the agent's saved state
- * carry the conversation across connections.
+ * connection opened on the first and reused while it lives. The server's agent
+ * session, found by the conversation ID, carries the conversation, so a turn
+ * sends only its own message; on a new connection it sends the whole
+ * transcript (turnMessages). The agent's saved state goes back when the server
+ * asks for it. A temporary chat is deleted from Copilot history after its turns
+ * (ChatDeleter).
  */
 export class AugLoopConversation {
   private conversationId = "";
   private readonly messages: { role: "user" | "assistant"; content: string }[] = [];
   private readonly states = new Map<string, string>();
   private connection: AugLoopConnection | null = null;
+  /** The connection the last turn went over: a turn over another sends the whole transcript. */
+  private lastTurnConnection: AugLoopConnection | null = null;
+  private readonly deleter: ChatDeleter | null;
   private chain: Promise<unknown> = Promise.resolve();
   private turns = 0;
   /** The models the last saved agent state names (lastAgentTurnOf). */
   private lastServed: string[] = [];
 
-  constructor(private readonly opts: AugLoopConversationOptions) {}
+  constructor(private readonly opts: AugLoopConversationOptions) {
+    this.deleter = opts.deleteChats ? new ChatDeleter(opts.deleteChats) : null;
+  }
 
   get turnCount(): number {
     return this.turns;
@@ -718,6 +849,21 @@ export class AugLoopConversation {
   close(): void {
     this.connection?.close();
     this.connection = null;
+  }
+
+  /** Resolves once the chat's deletion from history, if one is due, has run. A script awaits it before exiting. */
+  historySettled(): Promise<void> {
+    return this.deleter?.idle() ?? Promise.resolve();
+  }
+
+  /**
+   * Take the conversation ID the server names: it assigns one on the first turn,
+   * and moves a deleted chat's next turn on a new connection to a new one (F129).
+   */
+  private follow(conversationId: string | undefined): void {
+    if (!conversationId || conversationId === this.conversationId) return;
+    if (this.conversationId) log.info(`The server moved the conversation from ${this.conversationId} to ${conversationId}`);
+    this.conversationId = conversationId;
   }
 
   /** Send one user message and stream the answer. Resolves once the message is sent. */
@@ -764,7 +910,7 @@ export class AugLoopConversation {
         const b: Json = item.body ?? {};
         const wec = b.workflowExecutionCorrelation;
         if (!wec) continue;
-        if (b.conversationId && !this.conversationId) this.conversationId = b.conversationId;
+        this.follow(b.conversationId);
         if (kind === "LoadAgentSessionStateAnnotation") {
           const stateData = this.states.get(b.conversationId ?? "");
           log.info(`Agent state requested for ${b.conversationId || "a new conversation"}: ${stateData ? "sending the saved one" : "none saved"}`);
@@ -785,6 +931,7 @@ export class AugLoopConversation {
 
   private async startTurn(text: string, model: string, modelType: string, slotFlights: readonly string[], signal: AbortSignal | undefined, release: () => void): Promise<CopilotStream> {
     if (signal?.aborted) throw new Error("aborted");
+    await this.deleter?.turnStarting();
     const flights = [...BASE_FLIGHTS, ...slotFlights].map((f) => `${f};`).join("");
     const label = await resolveSensitivityLabel(this.opts.getGraphToken);
     const c = await this.ensureConnection(flights, signal);
@@ -793,9 +940,12 @@ export class AugLoopConversation {
     }
 
     const turn = this.turns++;
-    recordTurn(); // the throttle-avoidance bucket counts what the next line counts (turn-budget.ts)
-    log.info(`Chat turn ${turn}: model=${model}, agentModelType=${modelType}, cid=${this.conversationId || "new"}, text=${JSON.stringify(trunc(text, 200))}`);
     this.messages.push({ role: "user", content: text });
+    const newConnection = c !== this.lastTurnConnection;
+    this.lastTurnConnection = c;
+    const messages = turnMessages(this.messages, newConnection);
+    recordTurn(); // the throttle-avoidance bucket counts what the next line counts (turn-budget.ts)
+    log.info(`Chat turn ${turn}: model=${model}, agentModelType=${modelType}, cid=${this.conversationId || "new"}, sends=${messages.length > 1 ? `the transcript (${messages.length} messages, new connection)` : "its message"}, text=${JSON.stringify(trunc(text, 200))}`);
 
     const out = new AugLoopTurnStream();
     out.turnCount = this.turns;
@@ -815,6 +965,7 @@ export class AugLoopConversation {
       if (this.lastServed.length) out.contentOrigin = `AugLoop/${this.lastServed.join(",")}`;
       const status = out.result?.value ?? (err ? `error: ${err.message}` : stopped ? "stopped" : "no status");
       log.info(`Turn ${turn} ended: ${status}${out.result?.errorCode ? ` (${out.result.errorCode})` : ""}, ${out.answer.length} chars`);
+      this.deleter?.turnEnded(this.conversationId);
       out.finish(err);
       release();
     };
@@ -833,7 +984,7 @@ export class AugLoopConversation {
     };
 
     const onOutput = (b: Json) => {
-      if (b.sydneyConversationId && !this.conversationId) this.conversationId = b.sydneyConversationId;
+      this.follow(b.sydneyConversationId);
       const outcome = applyOutput(out, b);
       if (!outcome) return;
       if (outcome.kind === "canceled") { finish(); return; }
@@ -885,7 +1036,7 @@ export class AugLoopConversation {
       queryId,
       signalId: randomUUID(),
       conversationId: this.conversationId,
-      messages: this.messages.map((m) => ({ ...m })),
+      messages,
       sensitivityLabel: label,
       isClaudeAvailable: c.allowed?.isAnthropicAvailable === true,
       hostSessionId: c.sessionId,

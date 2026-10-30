@@ -1,10 +1,14 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { deflateRawSync } from "node:zlib";
 import {
   AugLoopTurnStream,
+  ChatDeleter,
+  chatDeletionsSettled,
   applyOutput,
   augLoopLabelSetting,
   buildChatSignal,
+  deleteExcelChats,
+  turnMessages,
   outcomeOfStatus,
   pickSensitivityLabel,
   lastAgentTurnOf,
@@ -235,6 +239,125 @@ describe("the agent's saved state", () => {
     expect(out).not.toContain("eyJhbGci");
     expect(out).not.toContain("UEsDB");
     expect(out).toContain("<token:");
+  });
+});
+
+describe("deleteExcelChats", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const OID = "01234567-89ab-cdef-0123-456789abcdef";
+  const TID = "fedcba98-7654-3210-fedc-ba9876543210";
+  const token = `h.${Buffer.from(JSON.stringify({ aud: "a", iss: "i", oid: OID, tid: TID, exp: 0 })).toString("base64url")}.s`;
+
+  it("deletes chats from Copilot history as Excel's Delete does", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ conversationIdsDeleted: ["conv-1", "conv-2"], result: { value: "Success" } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    await deleteExcelChats(token, ["conv-1", "conv-2"]);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://substrate.office.com/m365Copilot/DeleteConversation");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({
+      Authorization: `Bearer ${token}`,
+      "X-Scenario": "ExcelSidepaneWorkCopilot",
+      "X-AnchorMailbox": `Oid:${OID}@${TID}`,
+      "X-RoutingParameter-SessionKey": OID,
+    });
+    expect(JSON.parse(String(init.body))).toMatchObject({ conversationIdsToDelete: ["conv-1", "conv-2"], source: "excel" });
+  });
+
+  it("fails when the server refuses, or doesn't name every chat as deleted", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 401 })));
+    await expect(deleteExcelChats(token, ["conv-1"])).rejects.toThrow("HTTP 401");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ conversationIdsDeleted: ["conv-1"], result: { message: "1 conversation(s) deleted" } }), { status: 200 })));
+    await expect(deleteExcelChats(token, ["conv-1", "conv-2"])).rejects.toThrow("1 conversation(s) deleted");
+  });
+});
+
+describe("a temporary chat (ChatDeleter)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("is deleted once no turn has started for the delay, and not when the next turn comes first", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const deleted: string[][] = [];
+    const d = new ChatDeleter(async (ids) => { deleted.push(ids); }, 5_000);
+    d.turnEnded("conv-1");
+    await vi.advanceTimersByTimeAsync(4_999);
+    await d.turnStarting();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(deleted).toEqual([]);
+    d.turnEnded("conv-1");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(deleted).toEqual([["conv-1"]]);
+    d.turnEnded(""); // nothing due: the server never assigned an ID, and conv-1 is deleted
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(deleted).toEqual([["conv-1"]]);
+  });
+
+  it("deletes every ID its turns ran in, and tries a failed one again after the next turn", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const calls: string[][] = [];
+    let failNext = true;
+    const d = new ChatDeleter(async (ids) => {
+      calls.push(ids);
+      if (failNext) { failNext = false; throw new Error("HTTP 500"); }
+    }, 5_000);
+    d.turnEnded("conv-1");
+    await d.turnStarting(); // the next turn came first, and the server moved it to conv-2
+    d.turnEnded("conv-2");
+    await vi.advanceTimersByTimeAsync(5_000);
+    d.turnEnded("conv-2");
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(calls).toEqual([["conv-1", "conv-2"], ["conv-1", "conv-2"]]);
+  });
+
+  it("holds the next turn until a deletion in progress is done, and a failed one doesn't stop it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    let fail!: () => void;
+    const d = new ChatDeleter(() => new Promise<void>((_, reject) => { fail = () => reject(new Error("HTTP 500")); }), 5_000);
+    d.turnEnded("conv-1");
+    await vi.advanceTimersByTimeAsync(5_000);
+    let started = false;
+    const next = d.turnStarting().then(() => { started = true; });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(started).toBe(false);
+    fail();
+    await next;
+    expect(started).toBe(true);
+  });
+
+  it("lets a script wait for the deletion before it exits", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const deleted: string[][] = [];
+    const d = new ChatDeleter(async (ids) => { deleted.push(ids); }, 5_000);
+    d.turnEnded("conv-1");
+    const idle = d.idle();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await idle;
+    expect(deleted).toEqual([["conv-1"]]);
+  });
+
+  it("lets a process wait for every conversation's deletion before it exits", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const deleted: string[][] = [];
+    const a = new ChatDeleter(async (ids) => { deleted.push(ids); }, 5_000);
+    const b = new ChatDeleter(async (ids) => { deleted.push(ids); }, 5_000);
+    a.turnEnded("conv-1");
+    b.turnEnded("conv-2");
+    let settled = false;
+    const all = chatDeletionsSettled().then(() => { settled = true; });
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await all;
+    expect(deleted).toEqual([["conv-1"], ["conv-2"]]);
+  });
+});
+
+describe("turnMessages", () => {
+  it("sends a turn's own message, and the whole transcript on a new connection", () => {
+    const transcript = [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }];
+    expect(turnMessages(transcript, false)).toEqual([{ role: "user", content: "c" }]);
+    expect(turnMessages(transcript, true)).toEqual(transcript);
+    expect(turnMessages(transcript, true)[0]).not.toBe(transcript[0]);
   });
 });
 

@@ -1,7 +1,7 @@
 import { getAugLoopToken, getGraphToken, getToken } from "./auth.js";
 import { getOrCreateAgent } from "./agent.js";
 import { CopilotSession } from "./session.js";
-import { AugLoopConversation } from "./augloop.js";
+import { AugLoopConversation, deleteExcelChats } from "./augloop.js";
 import { isAugLoopModel } from "./augloop-models.js";
 import { uploadImage, type ImageAnnotation } from "./image-input.js";
 import { createLogger, trunc } from "./log.js";
@@ -20,6 +20,8 @@ export interface ModelSessionOptions {
   /**
    * Prevent proxy conversations appearing in the M365 Copilot history sidebar.
    * Defaults to true. Set false only when persistent Copilot history is wanted.
+   * AugLoop has no temporary mode: its chats are deleted from history after
+   * their turns instead (augloop.ts, ChatDeleter).
    */
   temporaryChat?: boolean;
 }
@@ -195,7 +197,11 @@ export class ModelSession {
 
 (Note: ${images.length === 1 ? "an attached image" : `${images.length} attached images`} could not be passed on — this model takes text only here. Don't describe ${images.length === 1 ? "it" : "them"}; say ${images.length === 1 ? "it" : "they"} didn't arrive.)`;
     }
-    this.augloop ??= new AugLoopConversation({ getToken: this.resolveAugLoopToken, getGraphToken });
+    this.augloop ??= new AugLoopConversation({
+      getToken: this.resolveAugLoopToken,
+      getGraphToken,
+      ...(this.temporaryChat ? { deleteChats: async (ids: string[]) => deleteExcelChats(await this.resolveToken(), ids) } : {}),
+    });
     log.info(`run: model=${model}, agent=none, turn=${this.augloop.turnCount}, sid=${this.sessionId}, cid=${this.conversationId}, via=AugLoop, text=${JSON.stringify(trunc(text, 200))}`);
     try {
       return await this.augloop.chat(text, model, signal);

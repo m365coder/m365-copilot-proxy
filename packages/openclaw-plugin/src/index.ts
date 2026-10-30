@@ -1,4 +1,4 @@
-import { getToken, getAvailableModels, createLogger } from "@m365-copilot/core";
+import { getToken, getAvailableModels, createLogger, chatDeletionsSettled } from "@m365-copilot/core";
 import { createApp } from "@m365-copilot/proxy-lib";
 import { serve } from "srvx";
 
@@ -125,7 +125,8 @@ export function generateOpenClawConfig(proxyPort: number = 4141): OpenClawConfig
 
 export interface ProxyHandle {
   port: number;
-  close: () => void;
+  /** Stops the server once the temporary chats due for deletion from Copilot history are deleted. */
+  close: () => Promise<void>;
 }
 
 /**
@@ -158,8 +159,9 @@ export async function startForOpenClaw(options: { port?: number } = {}): Promise
   return {
     proxy: {
       port: actualPort,
-      close: () => {
-        void server.close();
+      close: async () => {
+        await chatDeletionsSettled();
+        await server.close();
       },
     },
     config,
