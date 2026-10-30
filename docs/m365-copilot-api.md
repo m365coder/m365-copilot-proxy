@@ -791,7 +791,7 @@ body}`. In the body:
 |---|---|
 | `query` | the user's message |
 | `queryId` | a UUID; the server's annotations for this turn carry it |
-| `conversation` | `{conversationId, messages, grantedEntityPermissions: []}`. `conversationId` is `""` on the first turn and the server's ID after it (`sydneyConversationId` in the final output). `messages` is, from Excel, the **whole transcript**, `{role: "user"\|"assistant", content}`, the new message last. The proxy sends only the new message, and the whole transcript on the first turn over a new connection (see *History, and the conversation across turns*) |
+| `conversation` | `{conversationId, messages, grantedEntityPermissions: []}`. `conversationId` is `""` on the first turn and the server's ID after it (`sydneyConversationId` in the final output). `messages` is, from Excel, the **whole transcript**, `{role: "user"\|"assistant", content}`, the new message last. The proxy sends only the new message, and the whole transcript on the first turn over a new connection after the chat was deleted (see *History, and the conversation across turns*) |
 | `agentModelType` | the slot |
 | `documentConfig` | `{documentId, documentName, documentType: "xlsx", documentUrl, isReadOnly, readOnlyReason, sensitivityLabel: {id, priority}}`. **Chat only**, the mode menu's "Copilot will respond in chat only", is `isReadOnly: true` with `readOnlyReason: 21`; the system prompt then says so and forbids workbook edits |
 | `documentState` | Excel: the workbook's fingerprint (`"sheets:1\|Sheet1:empty"`), change type and selection. Not required: a turn without it succeeded, and the proxy leaves it out |
@@ -930,7 +930,9 @@ chat, named after that turn's message; the ID comes in `LoadAgentSessionState` a
 (hypotheses §48 F129).
 
 **What the proxy does.** A turn sends only its new message; the first turn over a new connection
-sends the whole transcript. The proxy follows the conversation ID the server names. With temporary
+after the chat was deleted sends the whole transcript. Without a deletion (`M365_SAVE_HISTORY=1`, or
+a reconnect before one ran), a new connection resumes the session, and its first turn sends only its
+message too. The proxy follows the conversation ID the server names. With temporary
 chat on (the default; `M365_SAVE_HISTORY=1` keeps the chats), it deletes the chat once 5 s pass
 after a turn without the next one starting, every ID its turns ran in, and a turn waits for a
 deletion in progress. On SIGTERM or SIGINT the server waits for the deletions that are due

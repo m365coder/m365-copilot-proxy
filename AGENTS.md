@@ -272,8 +272,9 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   (`[augloop] Chat turn` lines). AugLoop has no temporary mode (`disableMemory` and `allowResume: false` don't
   stop the chat being saved), so with temporary chat on `ChatDeleter` deletes each chat from history after its
   turns. A turn sends only its own message; don't send the whole transcript except on the first turn over a new
-  connection: a new connection can't resume a deleted chat's agent session, the saved state doesn't bring the
-  earlier turns back, and the transcript does. Follow the conversation ID the server names (it moves a deleted
+  connection after the chat was deleted (`ChatDeleter.wasDeleted`): a new connection can't resume a deleted
+  chat's agent session, the saved state doesn't bring the earlier turns back, and the transcript does. Without a
+  deletion a new connection resumes the session. Follow the conversation ID the server names (it moves a deleted
   chat to a new one), and have a process that exits await `chatDeletionsSettled()`, as the Nitro server's
   `plugins/temporary-chats.ts` does on SIGTERM (hypotheses §48 F128–F129).
 - **Entitlement-gated ≠ metered.** `gpt-6-think-deeper` (`Gpt_6_Reasoning`) and `claude-sonnet-5`

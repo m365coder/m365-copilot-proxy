@@ -125,7 +125,7 @@ than "we eyeballed one run." See §M (Methods) for the experimental rig.
   the chat signal needs no document state and its body's type header, and the proxy turns the speedbump off (F127);
   every chat is saved in Copilot history with no temporary mode, so the proxy deletes its own (F128), and the
   agent's session carries the conversation, so a turn sends only its own message, the whole transcript only on a
-  new connection, where a deleted chat's session can't be resumed (F129)
+  new connection after the chat was deleted, whose session can't be resumed (F129)
 
 ---
 
@@ -6860,9 +6860,12 @@ history, named after turn 2's message. Through the core (`augloop-probe.mjs`, `R
 turn 3 sent the whole transcript and recalled the codeword, and turn 4, sending only its own message under the
 new ID, recalled it too.
 
-The proxy now sends only the turn's message, and the whole transcript on the first turn over a new connection.
-It follows the ID the server names and deletes every ID its turns ran in, 5 s after a turn when no next turn has
-started. In the earlier sweeps' 157 AugLoop turns, the server asked for a saved state only at a conversation's
+The proxy now sends only the turn's message, and the whole transcript on the first turn over a new connection
+after the chat was deleted. Without a deletion it sends only the turn's message there too: with
+`M365_SAVE_HISTORY=1` (`RECONNECT_BEFORE=2`, 4 turns), turn 3 went over a new connection with only its message,
+the server resumed the session without asking for the saved state or moving the conversation, and turns 3 and 4
+recalled the codeword. It follows the ID the server names and deletes every ID its turns ran in, 5 s after a
+turn when no next turn has started. In the earlier sweeps' 157 AugLoop turns, the server asked for a saved state only at a conversation's
 start, and 78 connections carried 77 conversations, so the transcript goes out rarely. `proxy-verify` (GPT-6
 Sol) passed and left no chat; the Nitro server, sent SIGTERM right after a turn, deleted that chat and then
 exited (6.8 s). A sweep with these changes (GPT-6 Sol, `relay_onepass_first`) solved 10/10 bench tasks at 2.0

@@ -307,8 +307,10 @@ proxy deletes each of these chats 5 seconds after a turn when no next turn has
 started, with the call Excel's own Delete uses, and on shutdown (SIGTERM,
 SIGINT) it waits for those deletions. A proxy killed outright within those
 seconds leaves its last chat. The conversation keeps its context: each turn
-sends only its new message, and the first turn over a new connection sends the
-whole transcript, which the server reads when it can't resume a deleted chat.
+sends only its new message, and the first turn over a new connection after the
+chat was deleted sends the whole transcript, which the server reads because it
+can't resume a deleted chat. With `M365_SAVE_HISTORY=1` nothing is deleted, and
+every turn sends only its new message.
 `node scripts/augloop-history.mjs` lists the Excel agent chats in history.
 Details: [API doc §13](docs/m365-copilot-api.md), [hypotheses §48 F128–F129](docs/hypotheses.md).
 

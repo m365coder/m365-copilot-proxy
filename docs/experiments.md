@@ -273,7 +273,8 @@ count in the same turn budget; Opus 5.5 there has a limit of its own, 40 turns a
   17 + 25?|||What was the codeword?|||Say the codeword once more.' node scripts/augloop-probe.mjs augloop-gpt-6-sol`,
   then `node scripts/augloop-history.mjs`. **Read:** turns 3 and 4 recall the codeword; the debug log's `sends=`
   (the transcript only on turn 3), `The server moved the conversation`, and `Deleted chat` lines; no chat left
-  in history. **Cost:** 4 turns, no limit seen.
+  in history. With `M365_SAVE_HISTORY=1`, turn 3 sends only its message, the conversation keeps its ID, and the
+  chat stays (delete it with `augloop-history.mjs --delete <id>`). **Cost:** 4 turns, no limit seen.
 
 ---
 
