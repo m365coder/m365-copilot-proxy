@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createLogger } from "./log.js";
 import { getToneForModel, isClaudeAutoPaidModel, isSonnet55Model } from "./copilot.js";
+import { isAugLoopModel } from "./augloop-models.js";
 import type { ParsedToolCall, ToolDef } from "./tools.js";
 
 const log = createLogger("fenced");
@@ -561,6 +562,7 @@ export function defaultFramingForTone(tone?: string): string | undefined {
  *  framing has to key on the model ID (see SONNET_5_5_DEFAULT_FRAMING); and
  *  `Claude_Auto` on the paid scenario (CLAUDE_AUTO_PAID_FRAMING). */
 export function defaultFramingForModel(model: string): string | undefined {
+  if (isAugLoopModel(model)) return AUGLOOP_DEFAULT_FRAMING;
   if (isSonnet55Model(model)) return SONNET_5_5_DEFAULT_FRAMING;
   if (isClaudeAutoPaidModel(model)) return CLAUDE_AUTO_PAID_FRAMING;
   return defaultFramingForTone(getToneForModel(model));
@@ -587,6 +589,16 @@ const SONNET_5_DEFAULT_FRAMING = "relay_onepass_first";
 // 3.70 per run, 10/10 each, p = 0.0017). It has Sonnet 5's `/home/claude`
 // sandbox (§26), which the user-voice note names as the wrong machine.
 const SONNET_5_5_DEFAULT_FRAMING = "relay_onepass_first";
+
+// The Excel agent's models (augloop-models.ts) run in a container of their own
+// (cwd /app, a python_execution tool) under Excel's system prompt. Under
+// `baseline` GPT-6 Sol worked there or said the task's files weren't there, 0/10
+// on the bench; under the user-voice framings it solved 10/10 (relay_batch too).
+// relay_onepass_first, which asks for one block that looks, changes and checks,
+// took 2.0–2.1 turns per bench task on Opus 5.5, Sonnet 5.5 and GPT-6 Sol (10/10
+// each) and solved every real-pi run (hypotheses §48 F125). Opus 5.5's limit there
+// counts turns (F124).
+const AUGLOOP_DEFAULT_FRAMING = "relay_onepass_first";
 
 // `claude-auto` on the paid scenario (a premium account), which self-IDs as
 // Claude Opus 5.5, works in `/home/claude` and spends Opus 5.5's budget (docs §46

@@ -33,6 +33,25 @@ export function getImageArtifactToken(): Promise<string | null> {
   return getTokenForScope(IMAGE_ARTIFACT_SCOPES);
 }
 
+// The Excel agent (augloop.ts). Our client is preauthorized for AugLoop as it is for
+// designerapp: the token is the same `dir`/A256CBC-HS512 JWE that Excel's own client
+// presents (hypotheses §48 F118). Graph's token reads the tenant's sensitivity labels
+// (`InformationProtectionPolicy.Read` is among its scopes).
+const AUGLOOP_SCOPES = ["https://augloop.office.com/v2/.default"];
+const GRAPH_SCOPES = ["https://graph.microsoft.com/.default"];
+
+/** Token for the AugLoop service. Silent from the cached refresh token, like the others. */
+export async function getAugLoopToken(): Promise<string> {
+  const token = await getTokenForScope(AUGLOOP_SCOPES);
+  if (!token) throw new Error("No AugLoop token: silent refresh failed and no secrets.json for a login");
+  return token;
+}
+
+/** Token for Microsoft Graph. */
+export function getGraphToken(): Promise<string | null> {
+  return getTokenForScope(GRAPH_SCOPES);
+}
+
 import { createLogger } from "./log.js";
 const log = createLogger("auth");
 

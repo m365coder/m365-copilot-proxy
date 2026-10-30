@@ -129,7 +129,8 @@ function oboRetryMs(v: string | undefined): number[] {
   return (s.length ? s : [60, 120, 240, 480]).map((n) => n * 1000);
 }
 
-const EVENT = /^\[(\d{4}-\d\d-\d\dT[\d:.]+Z)\] \[\w+\] \[session\] (Chat turn|Turn result: Throttled(?: \((\w+)\))?)/gm;
+// `[augloop]` lines are the Excel agent's turns (augloop.ts), counted in the same bucket.
+const EVENT = /^\[(\d{4}-\d\d-\d\dT[\d:.]+Z)\] \[\w+\] \[(?:session|augloop)\] (Chat turn|Turn result: Throttled(?: \((\w+)\))?)/gm;
 const LOG_FILE = /debug.*\.log$/;
 const SKIP_DIR = /^(browser-profile|node_modules)$|frames/;
 

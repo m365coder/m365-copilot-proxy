@@ -3,10 +3,40 @@ export {
   getTokenSilent,
   getTokenForScope,
   getImageArtifactToken,
+  getAugLoopToken,
+  getGraphToken,
   loginAutomated,
   loadSecrets,
   forceReauth,
 } from "./auth.js";
+
+export {
+  AugLoopConversation,
+  AugLoopConnection,
+  AugLoopTurnStream,
+  applyOutput,
+  buildChatSignal,
+  outcomeOfStatus,
+  augLoopLabelSetting,
+  pickSensitivityLabel,
+  resolveSensitivityLabel,
+  resetSensitivityLabel,
+  lastAgentTurnOf,
+  readZipEntry,
+  redactFrame,
+  type AugLoopConversationOptions,
+  type AugLoopOutcome,
+  type SensitivityLabel,
+  type GraphSensitivityLabel,
+} from "./augloop.js";
+
+export {
+  augLoopModelOf,
+  isAugLoopModel,
+  isClaudeAugLoopModel,
+  AUGLOOP_MODEL_IDS,
+  type AugLoopModel,
+} from "./augloop-models.js";
 
 export {
   generateImage,

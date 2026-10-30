@@ -1,5 +1,6 @@
 import { JwtClaims } from "./schemas.js";
 import type { MeteredBudget } from "./priority-access.js";
+import { AUGLOOP_MODEL_IDS, augLoopModelOf, isAugLoopModel } from "./augloop-models.js";
 
 // Model name → tone mapping.
 // The server VALIDATES tones (an unknown tone errors with "Failed to invoke
@@ -193,6 +194,11 @@ const MODEL_TONES: Record<string, string> = {
 export function getToneForModel(model: string): string {
   const exact = MODEL_TONES[model];
   if (exact) return exact;
+  // The Excel agent's models (augloop-models.ts): the "tone" is the slot, its
+  // `agentModelType`. Before the patterns below, which would take
+  // `augloop-claude-opus-5.5` for Chathub's Claude_Opus.
+  const augloop = augLoopModelOf(model);
+  if (augloop) return augloop.modelType;
   // Unmapped `claude-*` strings (e.g. the `claude-opus-5[1m]` a Claude Code client
   // sends) must NOT fall back to the `magic` (GPT) tone. Empirically (route-probe,
   // 2026-07-07) the magic path does not tool-call right now — 0/2, confabulates
@@ -550,6 +556,8 @@ export function toolRequestUsesAgent(tone: string): boolean {
  * serves agent-less too (§36).
  */
 export function requestUsesAgent(model: string, hasTools: boolean): boolean {
+  // The Copilot Studio agent is a Chathub thing; the Excel agent takes none.
+  if (isAugLoopModel(model)) return false;
   const tone = getToneForModel(model);
   if (hasTools) return toolRequestUsesAgent(tone);
   return deadAgentlessRoutes.has(tone) && !deadAgentRoutes.has(tone) && process.env.M365_FORCE_AGENT !== "0";
@@ -609,6 +617,8 @@ const QUOTA_FREE_MODELS: ReadonlySet<string> = new Set([
  * stay off a budget: `claude-opus-4.8`, `claude-sonnet-4.6`, `gpt-6.1-sol-included`.
  */
 export function prefersPaidScenario(model: string): boolean {
+  // An AugLoop turn has no Chathub scenario, and says nothing about the paid seat.
+  if (isAugLoopModel(model)) return false;
   if (isIncludedOpusModel(model) || isIncludedSonnetModel(model) || QUOTA_FREE_MODELS.has(model)) return false;
   // Paid on every account already: never fall back to a different model.
   return !PAID_SCENARIO_TONES.has(getToneForModel(model)) && !namesSonnet55(model);
@@ -669,6 +679,7 @@ export function couldBeLicenceRefusalPrefix(text: string): boolean {
  * This is what session.ts routes on.
  */
 export function getScenarioForModel(model: string): ScenarioRouting {
+  if (isAugLoopModel(model)) return routing(false);
   if (isIncludedOpusModel(model) || isIncludedSonnetModel(model) || QUOTA_FREE_MODELS.has(model)) return routing(false);
   if (PAID_SCENARIO_TONES.has(getToneForModel(model)) || namesSonnet55(model)) return routing(true);
   return routing(prefersPaidScenario(model) && hasPaidSeat() !== false);
@@ -688,6 +699,9 @@ export function usesPaidScenario(model: string): boolean {
  * Follows the scenario the request will really use, `M365_SCENARIO` included.
  */
 export function meteredBudgetOf(model: string): MeteredBudget | null {
+  // AugLoop turns draw on none of Chathub's budgets. A limit the Excel agent
+  // reports is remembered under the model ID (augloop.ts, outcomeOfStatus).
+  if (isAugLoopModel(model)) return null;
   if (!usesPaidScenario(model)) return null;
   const tone = getToneForModel(model);
   if (tone === "Claude_Opus" || tone === "Claude_Auto") return "opus";
@@ -719,7 +733,7 @@ export function priorityAccessFallbackModel(budget: MeteredBudget): string | nul
 }
 
 export function getAvailableModels(): string[] {
-  return Object.keys(MODEL_TONES);
+  return [...Object.keys(MODEL_TONES), ...AUGLOOP_MODEL_IDS];
 }
 
 export function decodeJwt(token: string) {

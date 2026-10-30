@@ -1,6 +1,8 @@
-import { getToken } from "./auth.js";
+import { getAugLoopToken, getGraphToken, getToken } from "./auth.js";
 import { getOrCreateAgent } from "./agent.js";
 import { CopilotSession } from "./session.js";
+import { AugLoopConversation } from "./augloop.js";
+import { isAugLoopModel } from "./augloop-models.js";
 import { uploadImage, type ImageAnnotation } from "./image-input.js";
 import { createLogger, trunc } from "./log.js";
 import { awaitTurnBudget } from "./turn-budget.js";
@@ -11,6 +13,8 @@ const log = createLogger("model");
 export interface ModelSessionOptions {
   /** Pre-resolved auth token. If not provided, getToken() is called. */
   getToken?: () => Promise<string>;
+  /** Token for the Excel agent's AugLoop models. If not provided, getAugLoopToken() is called. */
+  getAugLoopToken?: () => Promise<string>;
   /** Whether to attempt agent resolution. Default: true. */
   useAgent?: boolean;
   /**
@@ -31,9 +35,14 @@ export interface ModelSessionOptions {
  */
 export class ModelSession {
   private resolveToken: () => Promise<string>;
+  private resolveAugLoopToken: () => Promise<string>;
   private useAgent: boolean;
   private temporaryChat: boolean;
   private copilotSession: CopilotSession | null = null;
+  /** The Excel agent's side of this conversation, when its model is an AugLoop one (augloop.ts). */
+  private augloop: AugLoopConversation | null = null;
+  /** Whether the last run() went to AugLoop, which takes no Copilot Studio agent. */
+  private lastRunAugLoop = false;
   private cachedAgentId: string | null | undefined = undefined;
 
   /** Stable IDs reused across CopilotSession reconnections. */
@@ -49,19 +58,22 @@ export class ModelSession {
    */
   newConversation(): void {
     this._conversationId = crypto.randomUUID();
+    this.augloop?.close();
+    this.augloop = null;
     this.reset();
   }
 
   constructor(options: ModelSessionOptions = {}) {
     this.resolveToken = options.getToken ?? getToken;
+    this.resolveAugLoopToken = options.getAugLoopToken ?? getAugLoopToken;
     this.useAgent = options.useAgent !== false;
     this.temporaryChat =
       options.temporaryChat ?? process.env.M365_SAVE_HISTORY !== "1";
   }
 
-  /** Number of turns completed in this session */
+  /** Number of turns completed in this session (on whichever service it runs). */
   get turnCount(): number {
-    return this.copilotSession?.turnCount ?? 0;
+    return (this.copilotSession?.turnCount ?? 0) + (this.augloop?.turnCount ?? 0);
   }
 
   /** Agent id baked into the current copilotSession (undefined = no agent). */
@@ -103,6 +115,8 @@ export class ModelSession {
     images: string[] = [],
     waitForBudget: () => Promise<{ waitedMs: number }> = () => awaitTurnBudget({ signal }),
   ): Promise<CopilotStream> {
+    this.lastRunAugLoop = isAugLoopModel(model);
+    if (this.lastRunAugLoop) return this.runAugLoop(text, model, signal, images, waitForBudget);
     let token = await this.resolveToken();
     // Image input (#39): upload each image for this conversation; the message points at them.
     // A failed upload is said in the text, so the model doesn't answer about an image it never got.
@@ -165,6 +179,37 @@ export class ModelSession {
   }
 
   /**
+   * A turn with one of the Excel agent's models (augloop.ts). It takes no Copilot
+   * Studio agent and no images; the conversation is the Excel agent's own, kept
+   * for this session's conversation ID until newConversation().
+   */
+  private async runAugLoop(
+    text: string,
+    model: string,
+    signal: AbortSignal | undefined,
+    images: string[],
+    waitForBudget: () => Promise<{ waitedMs: number }>,
+  ): Promise<CopilotStream> {
+    if (images.length > 0) {
+      text += `
+
+(Note: ${images.length === 1 ? "an attached image" : `${images.length} attached images`} could not be passed on — this model takes text only here. Don't describe ${images.length === 1 ? "it" : "them"}; say ${images.length === 1 ? "it" : "they"} didn't arrive.)`;
+    }
+    this.augloop ??= new AugLoopConversation({ getToken: this.resolveAugLoopToken, getGraphToken });
+    log.info(`run: model=${model}, agent=none, turn=${this.augloop.turnCount}, sid=${this.sessionId}, cid=${this.conversationId}, via=AugLoop, text=${JSON.stringify(trunc(text, 200))}`);
+    try {
+      return await this.augloop.chat(text, model, signal);
+    } catch (err: any) {
+      if (signal?.aborted) throw err;
+      // Nothing was sent (chat() resolves once the message is): reconnect and try once more.
+      log.info("AugLoop error, reconnecting:", err.message);
+      await waitForBudget();
+      this.augloop.close();
+      return await this.augloop.chat(text, model, signal);
+    }
+  }
+
+  /**
    * Force a re-resolution of the tool-calling agent against the tenant and
    * reconnect if it changed. Recovers from the "deleted-agent trap": a
    * long-lived host caches its agent id for the whole process lifetime, so once
@@ -176,7 +221,7 @@ export class ModelSession {
    * prompt to the fresh agent.
    */
   async refreshAgent(): Promise<boolean> {
-    if (!this.useAgent) return false;
+    if (!this.useAgent || this.lastRunAugLoop) return false;
     try {
       const fresh = await getOrCreateAgent({ forceRefresh: true });
       if (fresh !== this.cachedAgentId) {
@@ -201,5 +246,7 @@ export class ModelSession {
     this.copilotSession = null;
     this.cachedAgentId = undefined;
     this.currentAgentId = undefined;
+    // The next AugLoop turn reconnects; its conversation stays (newConversation drops it).
+    this.augloop?.close();
   }
 }

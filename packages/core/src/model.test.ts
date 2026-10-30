@@ -6,6 +6,24 @@ import { TurnBudgetHold } from "./turn-budget.js";
 // other (#77). The CopilotSession is faked: each chat() is one upstream turn.
 const wire = vi.hoisted(() => ({ events: [] as string[], failures: 0 }));
 
+// The Excel agent's conversation (augloop.ts), faked the same way.
+vi.mock("./augloop.js", () => ({
+  AugLoopConversation: class {
+    turnCount = 0;
+    constructor(private opts: { getToken: () => Promise<string> }) {
+      wire.events.push("augloop:new");
+    }
+    async chat(text: string, model: string) {
+      wire.events.push(`augloop:${model}:${await this.opts.getToken()}:${text}`);
+      this.turnCount++;
+      return { fullText: "ok" };
+    }
+    close() {
+      wire.events.push("augloop:close");
+    }
+  },
+}));
+
 vi.mock("./session.js", () => ({
   CopilotSession: class {
     turnCount = 0;
@@ -60,6 +78,29 @@ describe("ModelSession.run's reconnect", () => {
     await session().run("hi", "claude-sonnet", undefined, false, [], waitForBudget);
     expect(waitForBudget).not.toHaveBeenCalled();
     expect(wire.events).toEqual(["chat:tok1"]);
+  });
+
+  it("sends an AugLoop model to the Excel agent with the AugLoop token, and says images don't go", async () => {
+    const s = new ModelSession({ useAgent: true, getToken: async () => "sydney", getAugLoopToken: async () => "augloop" });
+    await s.run("hi", "augloop-claude-opus-5.5", undefined, true, ["data:image/png;base64,AAAA"]);
+    expect(wire.events[0]).toBe("augloop:new");
+    expect(wire.events[1]).toMatch(/^augloop:augloop-claude-opus-5\.5:augloop:hi\n\n\(Note: an attached image could not be passed on/);
+    expect(wire.events.some((e) => e.startsWith("chat:"))).toBe(false);
+    expect(s.turnCount).toBe(1);
+    expect(await s.refreshAgent()).toBe(false); // no Copilot Studio agent to re-resolve
+  });
+
+  it("keeps the Excel agent's conversation across turns, and starts a new one with the session's", async () => {
+    const s = new ModelSession({ useAgent: false, getAugLoopToken: async () => "augloop" });
+    await s.run("one", "augloop-gpt-6-sol", undefined, false);
+    await s.run("two", "augloop-gpt-6-sol", undefined, false);
+    expect(wire.events.filter((e) => e === "augloop:new")).toHaveLength(1);
+    expect(s.turnCount).toBe(2);
+    s.newConversation();
+    expect(s.turnCount).toBe(0);
+    await s.run("three", "augloop-gpt-6-sol", undefined, false);
+    expect(wire.events.filter((e) => e === "augloop:new")).toHaveLength(2);
+    expect(wire.events).toContain("augloop:close");
   });
 
   it("waits with awaitTurnBudget by default (a no-op unless M365_AVOID_THROTTLING is set)", async () => {
