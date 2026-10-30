@@ -121,7 +121,8 @@ than "we eyeballed one run." See §M (Methods) for the experimental rig.
   state names the model where self-IDs don't (F121), the agent is a containerized Copilot agent under
   Excel's prompt (F122) that keeps the conversation across turns (F123), Opus 5.5 there has its own
   40-a-day limit (F124), and under `relay_onepass_first` it drives the bench (30/30) and real pi (15/15) where
-  `baseline` sent GPT-6 Sol to its sandbox (F125); a Chat-only turn needs no label once SetClp is answered (F126)
+  `baseline` sent GPT-6 Sol to its sandbox (F125); a Chat-only turn needs no label once SetClp is answered (F126);
+  the chat signal needs no document state and its body's type header, and the proxy turns the speedbump off (F127)
 
 ---
 
@@ -6800,6 +6801,27 @@ F119's failure had both: no label and no answer. With `M365_AUGLOOP_LABEL=none` 
 still asked `SetClp`, the proxy answered it, and the turn succeeded. So the label matters for what the agent
 may do with the document, which Chat only already rules out; the proxy keeps sending the configured one, as
 Excel does.
+
+### F127 — the chat signal: what the server needs 🟢 (n=1 each)
+One turn per variant on `Gpt5Slot4` (unmetered), from Excel for the web's signal:
+- **`documentState: {fingerprint: ""}`** and nothing else: success; **no `documentState` at all**: success too.
+  Excel sends the workbook's fingerprint, change type, selection and active cell (the reference project sends
+  them empty). Either way the server still asks for the workbook script, which the proxy answers.
+- **`featureOverrides.SpeedbumpInContainerEnabled: false`**: success. Excel sets every container override to one
+  value (`true` with the container on); a speedbump is a pause for the user's confirmation, which the proxy can't give.
+- **`isClaudeAvailable: true`** (`ClaudeSlot7`): success, served by Sonnet 5.5 as with `false`. Excel's client sends
+  `isAutoModeSelected && isClaudeAvailable`, a hint for its Auto router; the reference project sends `true` for a
+  Claude model. The proxy sends the account's `isAnthropicAvailable`.
+- **No `H_` in the signal's body** (the type `AugLoop_ExcelAgentExperimental_ExcelAgentExperimentalSignal`, which
+  `parentPath` also names): `ErrorResponse 1003`, "Message type AugLoop_Session_Protocol_SyncMessage had a type
+  validation error", and no turn. The proxy used to wait out its 5-minute silence limit on such a refusal; it now
+  ends the turn on it.
+
+The proxy leaves `documentState` out, keeps the speedbump off, and sends the account's `isClaudeAvailable`.
+With the speedbump off, `isClaudeAvailable` and the empty fingerprint, `proxy-verify` (Sonnet 5.5) passed and
+GPT-6 Sol solved 10/10 on the bench at 2.0 turns per task with no sandbox turns (2.1 before, F125). Without
+`documentState`, a two-turn GPT-6 Sol conversation through the proxy's own path (`augloop-probe.mjs`) succeeded
+and turn 2 returned the codeword given in turn 1.
 
 ### H48b (open) — the other budgets, and the weekly ones
 Sonnet 5.5, GPT-6.1 Sol and Opus 5 have Excel metering units too; their sizes, and whether `…WeeklyExcel`

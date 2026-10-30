@@ -265,9 +265,11 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   Auth is an Entra ID token for `https://augloop.office.com/v2/.default` that our client gets silently; nothing
   is read from an Excel process. Every turn is Chat only (`documentConfig.isReadOnly`, reason 21) and carries
   the sensitivity label `M365_AUGLOOP_LABEL` names; answer every `SetClpAnnotation`, or the turn ends
-  `error_clp_set_failed`. Which model served is in the agent state the server asks the client to save
-  (`lastAgentTurnOf`), not in its self-ID, which is often wrong. AugLoop turns count in the same turn budget
-  as Chathub's (`[augloop] Chat turn` lines).
+  `error_clp_set_failed`. The chat signal differs from Excel's on purpose: no container speedbump, no
+  `documentState`, the account's `isClaudeAvailable`; its body's `H_` is required (hypotheses §48 F127).
+  Which model served is in the agent state the server asks the client to save (`lastAgentTurnOf`), not in
+  its self-ID, which is often wrong. AugLoop turns count in the same turn budget as Chathub's
+  (`[augloop] Chat turn` lines).
 - **Entitlement-gated ≠ metered.** `gpt-6-think-deeper` (`Gpt_6_Reasoning`) and `claude-sonnet-5`
   (`Claude_Sonnet_5`) need the same paid
   scenario as Opus but carry **no** priority-access budget and throttle like everything else,

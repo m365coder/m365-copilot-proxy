@@ -794,10 +794,12 @@ body}`. In the body:
 | `conversation` | `{conversationId, messages, grantedEntityPermissions: []}`. `conversationId` is `""` on the first turn and the server's ID after it (`sydneyConversationId` in the final output). `messages` is the **whole transcript**, `{role: "user"\|"assistant", content}`, the new message last |
 | `agentModelType` | the slot |
 | `documentConfig` | `{documentId, documentName, documentType: "xlsx", documentUrl, isReadOnly, readOnlyReason, sensitivityLabel: {id, priority}}`. **Chat only**, the mode menu's "Copilot will respond in chat only", is `isReadOnly: true` with `readOnlyReason: 21`; the system prompt then says so and forbids workbook edits |
-| `documentState` | the workbook's fingerprint and selection (`"sheets:1\|Sheet1:empty"`, `Sheet1!A1`) |
-| `featureOverrides` | `WebSearchEnabled`, `EnterpriseSearchEnabled`, `AgentInContainerEnabled`, … |
+| `documentState` | Excel: the workbook's fingerprint (`"sheets:1\|Sheet1:empty"`), change type and selection. Not required: a turn without it succeeded, and the proxy leaves it out |
+| `featureOverrides` | `WebSearchEnabled`, `EnterpriseSearchEnabled`, `AgentInContainerEnabled`, `SpeedbumpInContainerEnabled`, … Excel sets the container ones to one value; the proxy keeps `SpeedbumpInContainerEnabled` off, so the agent doesn't pause for a confirmation |
 | `clientConfig` | `clientName: "Aurora"`, locale, `hostAriaSessionId` |
-| also | `isAutoModeSelected`, `isClaudeAvailable` (`false`, even for a Claude slot), `enabledSkills`, `connections`, `installedAddIns`, `registeredFormulas`, `changeHistoryEnabled`, `allowResume: true` |
+| `isClaudeAvailable` | Excel sends `isAutoModeSelected && <Claude available>`, a hint for its Auto router, so `false` for a chosen slot. `true` served the same model; the proxy sends the account's `isAnthropicAvailable` |
+| also | `isAutoModeSelected`, `enabledSkills`, `connections`, `installedAddIns`, `registeredFormulas`, `changeHistoryEnabled`, `allowResume: true` |
+| `H_` | `{T_: "AugLoop_ExcelAgentExperimental_ExcelAgentExperimentalSignal", B_: [...]}`, **required** although `parentPath` names the type: without it the server answers `ErrorResponse` `1003` ("type validation error") and the turn never starts |
 
 During the turn the server asks the client for things, as **execution-correlated annotations**
 (`workflowExecutionCorrelation: {callerMessageId, workflowExecutionId}`), and waits for an
