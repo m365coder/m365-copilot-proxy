@@ -89,7 +89,7 @@ describe("outcomeOfStatus", () => {
 describe("buildChatSignal", () => {
   const base = {
     modelType: "ClaudeSlot6", query: "hi", queryId: "q", signalId: "s", conversationId: "",
-    messages: [{ role: "user", content: "hi" }], hostSessionId: "abc", cv: "cv.1", contextId: "C1", messageId: "c9",
+    messages: [{ role: "user", content: "hi" }], isClaudeAvailable: true, hostSessionId: "abc", cv: "cv.1", contextId: "C1", messageId: "c9",
   };
 
   it("asks for Chat only, with the slot and the transcript", () => {
@@ -98,7 +98,15 @@ describe("buildChatSignal", () => {
     expect(body.documentConfig.sensitivityLabel).not.toHaveProperty("name");
     expect(body.agentModelType).toBe("ClaudeSlot6");
     expect(body.conversation).toEqual({ conversationId: "", messages: [{ role: "user", content: "hi" }], grantedEntityPermissions: [] });
-    expect(body.H_.T_).toBe("AugLoop_ExcelAgentExperimental_ExcelAgentExperimentalSignal");
+    expect(body.H_.T_).toBe("AugLoop_ExcelAgentExperimental_ExcelAgentExperimentalSignal"); // required: the server refuses a body without it
+  });
+
+  it("has no container speedbump, the account's isClaudeAvailable, and no document state", () => {
+    const body = buildChatSignal({ ...base, sensitivityLabel: null }).ops[0].items[0].body;
+    expect(body.featureOverrides.SpeedbumpInContainerEnabled).toBe(false);
+    expect(body.isClaudeAvailable).toBe(true);
+    expect(buildChatSignal({ ...base, isClaudeAvailable: false, sensitivityLabel: null }).ops[0].items[0].body.isClaudeAvailable).toBe(false);
+    expect(body).not.toHaveProperty("documentState");
   });
 
   it("sends no label when none is configured", () => {

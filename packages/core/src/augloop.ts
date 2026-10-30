@@ -617,7 +617,14 @@ export interface AugLoopConversationOptions {
   getGraphToken: () => Promise<string | null>;
 }
 
-/** The chat signal for one turn, as Excel for the web sends it in Chat only mode. Exported for tests. */
+/**
+ * The chat signal for one turn, in Chat only mode. Exported for tests. Where it
+ * differs from Excel for the web's (hypotheses §48 F127): no container speedbump,
+ * which would pause the agent for a confirmation the proxy can't give;
+ * `isClaudeAvailable` is the account's (Excel sends it only in Auto mode); and
+ * no `documentState`, which the server doesn't require.
+ * The body's `H_` is required: without it the server refuses the message.
+ */
 export function buildChatSignal(opts: {
   modelType: string;
   query: string;
@@ -626,6 +633,8 @@ export function buildChatSignal(opts: {
   conversationId: string;
   messages: { role: string; content: string }[];
   sensitivityLabel: SensitivityLabel | null;
+  /** The account's `isAnthropicAvailable` (UserAllowedAnnotation). */
+  isClaudeAvailable: boolean;
   hostSessionId: string;
   cv: string;
   contextId: string;
@@ -656,14 +665,13 @@ export function buildChatSignal(opts: {
           featureOverrides: {
             WebSearchEnabled: true, EnterpriseSearchEnabled: false, PowerBiMcpEnabled: false, PythonToolToggleEnabled: false,
             EnableExtractDataFromPageThumbnail: false, AgentInContainerEnabled: true, AgentStateStorageInContainerEnabled: true,
-            IsWebSearchInAgentContainerEnabled: true, SpeedbumpInContainerEnabled: true, ExcelCopilotForReadOnlyFiles: true,
+            IsWebSearchInAgentContainerEnabled: true, SpeedbumpInContainerEnabled: false, ExcelCopilotForReadOnlyFiles: true,
             CotLocaleInContainerEnabled: true, QuickAnswerEnabled: false,
           },
           agentModelType: opts.modelType,
           isAutoModeSelected: false,
           isAutoSelected: false,
-          isClaudeAvailable: false,
-          documentState: { fingerprint: "sheets:1|Sheet1:empty", changeType: "none", selectedRange: "Sheet1!A1", activeCell: "Sheet1!A1" },
+          isClaudeAvailable: opts.isClaudeAvailable,
           enabledSkills: [],
           includeCustomSkills: false,
           connections: [],
@@ -837,8 +845,14 @@ export class AugLoopConversation {
       finish();
     };
 
+    const signalMessageId = c.nextMessageId();
     unlisten = c.listen((m) => {
       if (m.H_?.T_ === "closed") { finish(out.answer ? undefined : new Error("AugLoop connection closed during the turn")); return; }
+      // The server refused the chat signal itself (a malformed one: `1003 … type validation error`).
+      if (m.H_?.T_ === `${SESSION}ErrorResponse` && m.messageId === signalMessageId) {
+        finish(new Error(`AugLoop refused the chat signal: ${m.code ?? ""} ${m.error ?? ""}`.trim()));
+        return;
+      }
       const at: string = m.annotationType ?? "";
       if (!at.startsWith(P)) return;
       const kind = at.slice(P.length);
@@ -873,10 +887,11 @@ export class AugLoopConversation {
       conversationId: this.conversationId,
       messages: this.messages.map((m) => ({ ...m })),
       sensitivityLabel: label,
+      isClaudeAvailable: c.allowed?.isAnthropicAvailable === true,
       hostSessionId: c.sessionId,
       cv: c.nextCv(),
       contextId: c.nextContextId(),
-      messageId: c.nextMessageId(),
+      messageId: signalMessageId,
     }));
     return out.stream();
   }
