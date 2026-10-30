@@ -19,7 +19,9 @@
 // Sign-in uses the account's ~/.config/opencode-m365/secrets.json and a copy of its browser profile
 // (~/.cache/webclient-profile, kept between runs, so later runs need no MFA). On "Verify your identity" it
 // clicks only "Use a verification code" (never Text or Call, which send an SMS to or ring the account's
-// phone) and enters the TOTP code (docs/hypotheses.md §47 F117).
+// phone) and enters the TOTP code (docs/hypotheses.md §47 F117). Like the proxy's login, it presents the
+// device certificate that secrets.json names (clientCertPath, clientCertPassword) to
+// device.login.microsoftonline.com.
 //
 // The endpoint runs any JS it is sent, as this account: it listens on 127.0.0.1 only, needs the token, and
 // exits after IDLE_MS (default 45 min) without a command. Saved bodies skip the sign-in hosts and redact
@@ -28,7 +30,7 @@ import http from "node:http";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const OUT = process.env.OUT ?? join(homedir(), ".cache", "webclient-capture", new Date().toISOString().replace(/[:.]/g, "-"));
@@ -59,6 +61,9 @@ const context = await chromium.launchPersistentContext(PROFILE, {
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
   userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
   locale: "en-GB", timezoneId: "Europe/Copenhagen", viewport: { width: 1400, height: 900 },
+  clientCertificates: creds.clientCertPath
+    ? [{ origin: "https://device.login.microsoftonline.com", pfxPath: resolve(cfg, creds.clientCertPath), passphrase: creds.clientCertPassword }]
+    : undefined,
 });
 await context.addInitScript(() => Object.defineProperty(navigator, "webdriver", { get: () => undefined }));
 let page = context.pages()[0] ?? (await context.newPage());

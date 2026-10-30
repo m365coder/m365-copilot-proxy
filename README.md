@@ -167,6 +167,31 @@ Contributed by [@EatonWu](https://github.com/EatonWu). Two honest caveats:
 > `client_secret` only Microsoft holds. No tenant admin can grant it. Measured, with the
 > sign-in actually completed, in [§13 H13.2](docs/hypotheses.md).
 
+#### If Conditional Access requires a registered device
+
+Some tenants' Conditional Access admits only registered devices. Entra can identify a
+device by a TLS client certificate, which it asks for at
+`https://device.login.microsoftonline.com`. This depends on the tenant's policy, not on
+the Copilot licence. If you have the device's certificate as a PKCS#12 file (`.p12` /
+`.pfx`), add two keys to `secrets.json`:
+
+```json
+{
+  "email": "you@company.com",
+  "password": "your-password",
+  "mfaSecret": "YOUR_TOTP_BASE32_SECRET",
+  "clientCertPath": "/path/to/device-cert.p12",
+  "clientCertPassword": "the-p12-passphrase"
+}
+```
+
+Both browser logins (automated and interactive) then present the certificate to that
+origin and to no other. A relative `clientCertPath` is read from `secrets.json`'s
+directory. Leave out `clientCertPassword` if the file has no passphrase. If the file
+doesn't exist, the login stops before it opens the sign-in page. With a certificate set,
+Playwright sends all of the login browser's traffic through a local proxy of its own,
+which makes the TLS connections from Node; without one, the browser connects directly.
+
 #### First run
 
 On first run, the system does an automated browser login (via Playwright/Chromium) to get OAuth tokens. After that, tokens refresh silently from the MSAL cache.
@@ -620,6 +645,10 @@ The auth flow uses Azure MSAL with PKCE:
    `M365_ENABLE_INTERACTIVE_APPROVAL=1`, and only after step 2 is unavailable or has
    actually failed. This is the path for tenants where no TOTP seed exists.
 
+If `secrets.json` names a client certificate (`clientCertPath`), steps 2 and 3 present it to
+`https://device.login.microsoftonline.com`, for tenants that admit only registered devices
+(see [If Conditional Access requires a registered device](#if-conditional-access-requires-a-registered-device)).
+
 All three redeem the code against `https://login.microsoftonline.com/common/oauth2/nativeclient`
 with PKCE. That redirect isn't a stylistic choice: the client is Microsoft's own Copilot app
 (the Sydney scopes are granted to no other), so nobody can register a loopback URI — a
@@ -712,7 +741,7 @@ All stored in `~/.config/opencode-m365/`:
 
 | File | Description |
 |---|---|
-| `secrets.json` | Login credentials (email, password, mfaSecret) |
+| `secrets.json` | Login credentials (email, password, mfaSecret; optionally clientCertPath, clientCertPassword) |
 | `msal-cache.json` | MSAL token cache (auto-managed) |
 | `agent-id.json` | Cached Copilot Studio agent ID |
 | `debug.log` | Debug log (when `M365_DEBUG=1`; renamed by `M365_LOG_FILE`) |

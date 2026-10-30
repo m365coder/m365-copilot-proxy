@@ -6,7 +6,7 @@ import {
   mkdirSync,
 } from "node:fs";
 import { execSync } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 
 const CLIENT_ID = "c0ab8ce9-e9a0-42e7-b064-33d422df41f1";
@@ -139,6 +139,48 @@ interface Credentials {
   email: string;
   password: string;
   mfaSecret: string;
+}
+
+// Entra's device authentication. When Conditional Access requires a registered device, sign-in
+// can send the browser to this origin, which asks for the device's TLS client certificate.
+const CLIENT_CERT_ORIGIN = "https://device.login.microsoftonline.com";
+
+interface ClientCertificate {
+  origin: string;
+  pfxPath: string;
+  passphrase?: string;
+}
+
+/**
+ * The client certificate that sign-in presents, when secrets.json names one: `clientCertPath`,
+ * a PKCS#12 file (.p12/.pfx; a relative path is read from secrets.json's directory), and
+ * `clientCertPassword`, its passphrase. Without `clientCertPath` this returns undefined and the
+ * browser launches as before. With a certificate, Playwright sends all of the browser's traffic
+ * through a local proxy of its own, which makes the TLS connections from Node and presents the
+ * certificate to CLIENT_CERT_ORIGIN only.
+ */
+export function loginClientCertificates(): ClientCertificate[] | undefined {
+  let data: { clientCertPath?: unknown; clientCertPassword?: unknown } | null = null;
+  try {
+    if (existsSync(SECRETS_FILE)) data = JSON.parse(readFileSync(SECRETS_FILE, "utf-8"));
+  } catch {}
+  const path = data?.clientCertPath;
+  if (typeof path !== "string" || path === "") return undefined;
+  const pfxPath = resolve(dirname(SECRETS_FILE), path);
+  // Stop before the sign-in page: without the certificate, Conditional Access refuses the
+  // sign-in only after the password has been sent.
+  if (!existsSync(pfxPath)) {
+    throw new Error(`clientCertPath in ${SECRETS_FILE} names a file that does not exist: ${pfxPath}`);
+  }
+  log.info(`Sign-in presents the client certificate ${pfxPath} to ${CLIENT_CERT_ORIGIN}`);
+  const passphrase = data?.clientCertPassword;
+  return [
+    {
+      origin: CLIENT_CERT_ORIGIN,
+      pfxPath,
+      passphrase: typeof passphrase === "string" ? passphrase : undefined,
+    },
+  ];
 }
 
 /**
@@ -346,6 +388,7 @@ async function runBrowserLogin(
   attempts = 3,
 ): Promise<string | null> {
   const { chromium } = await import("playwright");
+  const clientCertificates = loginClientCertificates();
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const { authUrl, verifier } = await buildAuthUrlForScopes(app, scopes);
@@ -366,6 +409,7 @@ async function runBrowserLogin(
       locale: LOGIN_LOCALE,
       timezoneId: LOGIN_TIMEZONE,
       viewport: { width: 1280, height: 800 },
+      clientCertificates,
     });
     await context.addInitScript(() => {
       // navigator.webdriver === true is the single loudest automation signal.
@@ -518,6 +562,7 @@ async function loginInteractiveForScopes(scopes: string[]): Promise<string> {
     locale: LOGIN_LOCALE,
     timezoneId: LOGIN_TIMEZONE,
     viewport: { width: 1280, height: 800 },
+    clientCertificates: loginClientCertificates(),
   });
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
