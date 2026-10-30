@@ -268,6 +268,13 @@ count in the same turn budget; Opus 5.5 there has a limit of its own, 40 turns a
   solved, turns per task, and the sandbox column (turns the agent ran its own tools). **Cost:** ~2 turns per
   task; `augloop-gpt-6-sol` has no limit seen, `augloop-claude-opus-5.5` stops the sweep after 40 turns a day (F124).
 
+### E-X5 — The conversation across a deleted chat and a new connection (F129)
+- **Run:** `M365_DEBUG=1 RECONNECT_BEFORE=2 TURNS='Remember the codeword <word>. Reply with just OK.|||What is
+  17 + 25?|||What was the codeword?|||Say the codeword once more.' node scripts/augloop-probe.mjs augloop-gpt-6-sol`,
+  then `node scripts/augloop-history.mjs`. **Read:** turns 3 and 4 recall the codeword; the debug log's `sends=`
+  (the transcript only on turn 3), `The server moved the conversation`, and `Deleted chat` lines; no chat left
+  in history. **Cost:** 4 turns, no limit seen.
+
 ---
 
 ## Adding an experiment

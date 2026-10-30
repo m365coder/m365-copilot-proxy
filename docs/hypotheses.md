@@ -122,7 +122,10 @@ than "we eyeballed one run." See §M (Methods) for the experimental rig.
   Excel's prompt (F122) that keeps the conversation across turns (F123), Opus 5.5 there has its own
   40-a-day limit (F124), and under `relay_onepass_first` it drives the bench (30/30) and real pi (15/15) where
   `baseline` sent GPT-6 Sol to its sandbox (F125); a Chat-only turn needs no label once SetClp is answered (F126);
-  the chat signal needs no document state and its body's type header, and the proxy turns the speedbump off (F127)
+  the chat signal needs no document state and its body's type header, and the proxy turns the speedbump off (F127);
+  every chat is saved in Copilot history with no temporary mode, so the proxy deletes its own (F128), and the
+  agent's session carries the conversation, so a turn sends only its own message, the whole transcript only on a
+  new connection, where a deleted chat's session can't be resumed (F129)
 
 ---
 
@@ -6822,6 +6825,50 @@ With the speedbump off, `isClaudeAvailable` and the empty fingerprint, `proxy-ve
 GPT-6 Sol solved 10/10 on the bench at 2.0 turns per task with no sandbox turns (2.1 before, F125). Without
 `documentState`, a two-turn GPT-6 Sol conversation through the proxy's own path (`augloop-probe.mjs`) succeeded
 and turn 2 returned the codeword given in turn 1.
+
+### F128 — every Excel agent chat is saved in Copilot history, and AugLoop has no temporary mode 🟢
+Listed as Excel's history pane lists them (`GetChats`, API doc §13), all 10 conversations in the proxy's debug
+log were there, named after their first message, with `copilotReferenceId: "ExcelAgentV2"` and no expiry. One
+turn each on `Gpt5Slot4`, with the chat looked up afterwards:
+- **`"disableMemory": "1"` in the signal body**: accepted (no `1003`), and the chat was saved.
+- **`allowResume: false`**: the chat was saved. Excel sets `allowResume: true` in all three signal builders; it
+  belongs to resuming an unfinished query (`ResumeQueryAfterNewSession`, `…AfterSpeedbump`, `…AfterTimeout`).
+  Excel's only `disableMemory=1` is on its Chathub URL (`isInPrivateChat`).
+- **`DeleteConversation`** with the proxy's Chathub token: HTTP 200, "1 conversation(s) and their chat data
+  deleted"; `GetChats` no longer lists the chat and `GetConversation` answers 404. It gives the same answer for a
+  chat already deleted.
+
+So with temporary chat on, the proxy deletes each AugLoop chat after its turns (F129 says when).
+
+### F129 — the agent's session carries the conversation; after a deleted chat, only the transcript does 🟢
+Two-turn conversations on `Gpt5Slot4`: a codeword, then a request for it. Each turn sent only its own message
+unless noted:
+
+| case | the server asked for the saved state | turn 2 recalled |
+|---|---|---|
+| same connection | no | yes |
+| chat deleted after turn 1, same connection | no | yes |
+| new connection before turn 2 | no | yes |
+| new connection, saved state withheld | no | yes |
+| chat deleted, then a new connection | yes, and got it | **no**, 2 of 2 ("I don't have the codeword") |
+| chat deleted, then a new connection, whole transcript | yes | yes |
+
+The saved state doesn't carry the conversation's turns; the session does, and the transcript is the server's
+fallback (`<prior-conversation>`, F123). In the deleted-then-new-connection case the server also moved the
+conversation to a new ID, which it named in `LoadAgentSessionState` and `sydneyConversationId`: a new chat in
+history, named after turn 2's message. Through the core (`augloop-probe.mjs`, `RECONNECT_BEFORE=2`, 4 turns),
+turn 3 sent the whole transcript and recalled the codeword, and turn 4, sending only its own message under the
+new ID, recalled it too.
+
+The proxy now sends only the turn's message, and the whole transcript on the first turn over a new connection.
+It follows the ID the server names and deletes every ID its turns ran in, 5 s after a turn when no next turn has
+started. In the earlier sweeps' 157 AugLoop turns, the server asked for a saved state only at a conversation's
+start, and 78 connections carried 77 conversations, so the transcript goes out rarely. `proxy-verify` (GPT-6
+Sol) passed and left no chat; the Nitro server, sent SIGTERM right after a turn, deleted that chat and then
+exited (6.8 s). A sweep with these changes (GPT-6 Sol, `relay_onepass_first`) solved 10/10 bench tasks at 2.0
+turns per task and 5/5 real-pi fix-bug runs at 2.0 turns per run (2.1 and 2.4 in F125), with no sandbox turns.
+All 30 turns sent only their own message, and each of the 15 chats was deleted once after its last turn, with
+no failed deletion; Copilot history held no Excel agent chat afterwards.
 
 ### H48b (open) — the other budgets, and the weekly ones
 Sonnet 5.5, GPT-6.1 Sol and Opus 5 have Excel metering units too; their sizes, and whether `…WeeklyExcel`

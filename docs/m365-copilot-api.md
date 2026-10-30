@@ -791,7 +791,7 @@ body}`. In the body:
 |---|---|
 | `query` | the user's message |
 | `queryId` | a UUID; the server's annotations for this turn carry it |
-| `conversation` | `{conversationId, messages, grantedEntityPermissions: []}`. `conversationId` is `""` on the first turn and the server's ID after it (`sydneyConversationId` in the final output). `messages` is the **whole transcript**, `{role: "user"\|"assistant", content}`, the new message last |
+| `conversation` | `{conversationId, messages, grantedEntityPermissions: []}`. `conversationId` is `""` on the first turn and the server's ID after it (`sydneyConversationId` in the final output). `messages` is, from Excel, the **whole transcript**, `{role: "user"\|"assistant", content}`, the new message last. The proxy sends only the new message, and the whole transcript on the first turn over a new connection (see *History, and the conversation across turns*) |
 | `agentModelType` | the slot |
 | `documentConfig` | `{documentId, documentName, documentType: "xlsx", documentUrl, isReadOnly, readOnlyReason, sensitivityLabel: {id, priority}}`. **Chat only**, the mode menu's "Copilot will respond in chat only", is `isReadOnly: true` with `readOnlyReason: 21`; the system prompt then says so and forbids workbook edits |
 | `documentState` | Excel: the workbook's fingerprint (`"sheets:1\|Sheet1:empty"`), change type and selection. Not required: a turn without it succeeded, and the proxy leaves it out |
@@ -828,7 +828,8 @@ The agent is GitHub Copilot's agent runtime (`producer: "copilot-agent"`) in a c
 `python_execution` tool that runs in the container. Its state is a ZIP (`events.jsonl`,
 `session.db`, `workspace.yaml`, `checkpoints/`), which the server asks the client to save after
 every turn and to load when the container is gone. When it can't resume the agent's session it
-puts `conversation.messages` into the prompt as `<prior-conversation>`. The prompt also carries a
+puts `conversation.messages` into the prompt as `<prior-conversation>`; loading the saved state
+doesn't bring back the conversation's earlier turns (hypotheses §48 F129). The prompt also carries a
 `<user-context>` block the server builds from the directory (the user's name, title, office and
 manager), so the state holds it too: the proxy keeps the state in memory only, and its frame dumps
 leave it out.
@@ -899,6 +900,42 @@ the start of one, or an ID; `none` sends none), matched against the tenant's lab
 `InformationProtectionPolicy.Read`). A tenant that has labels but none of that name fails the
 request with the list of its labels. What a Chat-only turn can't do without is the `SetClp` answer:
 with that answered, a turn without a label passed too (hypotheses §48 F126).
+
+### History, and the conversation across turns
+
+**The server saves every Excel agent chat in Copilot history**, named after its first message, with
+`copilotReferenceId: "ExcelAgentV2"` and no expiry; Excel's chat history lists it. AugLoop has **no
+temporary-chat mode**. Excel's only `disableMemory=1` is on its Chathub URL (`isInPrivateChat`). With
+`"disableMemory": "1"` in the chat signal, or `allowResume: false`, the chat was still saved.
+`allowResume` is `true` in every signal Excel builds; it belongs to resuming an unfinished query
+(the client's `ResumeQueryAfterNewSession`, `…AfterSpeedbump`, `…AfterTimeout`), not to history.
+Excel's history pane uses these calls, with the Chathub token (hypotheses §48 F128):
+
+| Call | Request | Reply |
+|---|---|---|
+| `GET https://substrate.office.com/m365Copilot/GetChats?request=<JSON>` | `{source: "excel", traceId: "", productThreadType: "Excel", mergeWorkWebChats: true, threadType: "appchat"}` | `{chats: [{conversationId, chatName, createTimeUtc, copilotReferenceId, …}]}` |
+| `GET …/GetConversation?request=<JSON>` | `{conversationId, source: "excel", traceId: ""}` | `{messages}`; 404 once the chat is deleted |
+| `POST …/DeleteConversation` | `{conversationIdsToDelete: [ids], source: "excel", traceId}` | `{conversationIdsDeleted, result: {message: "1 conversation(s) and their chat data deleted."}}`, also for a chat already deleted |
+
+Headers: `Authorization: Bearer <token>`, `X-Scenario: ExcelSidepaneWorkCopilot`,
+`X-AnchorMailbox: Oid:<oid>@<tid>`, `X-RoutingParameter-SessionKey: <oid>`.
+
+**What carries the conversation** is the agent's session on the server, which it finds by the
+conversation ID: a turn that sends only its own message is answered in context, over the same
+connection or a new one. Deleting the chat doesn't end the session on the connection that has it.
+A new connection, though, can't resume a deleted chat's session: the server asks for the saved
+state, which doesn't bring back the earlier turns, and moves the conversation to a new ID (a new
+chat, named after that turn's message; the ID comes in `LoadAgentSessionState` and as
+`sydneyConversationId`). The whole transcript in `messages` brings the earlier turns back
+(hypotheses §48 F129).
+
+**What the proxy does.** A turn sends only its new message; the first turn over a new connection
+sends the whole transcript. The proxy follows the conversation ID the server names. With temporary
+chat on (the default; `M365_SAVE_HISTORY=1` keeps the chats), it deletes the chat once 5 s pass
+after a turn without the next one starting, every ID its turns ran in, and a turn waits for a
+deletion in progress. On SIGTERM or SIGINT the server waits for the deletions that are due
+(`chatDeletionsSettled`); a process killed outright within those seconds leaves its last chat.
+`scripts/augloop-history.mjs` lists the Excel agent chats in history.
 
 ---
 

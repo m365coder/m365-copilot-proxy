@@ -269,7 +269,13 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   `documentState`, the account's `isClaudeAvailable`; its body's `H_` is required (hypotheses §48 F127).
   Which model served is in the agent state the server asks the client to save (`lastAgentTurnOf`), not in
   its self-ID, which is often wrong. AugLoop turns count in the same turn budget as Chathub's
-  (`[augloop] Chat turn` lines).
+  (`[augloop] Chat turn` lines). AugLoop has no temporary mode (`disableMemory` and `allowResume: false` don't
+  stop the chat being saved), so with temporary chat on `ChatDeleter` deletes each chat from history after its
+  turns. A turn sends only its own message; don't send the whole transcript except on the first turn over a new
+  connection: a new connection can't resume a deleted chat's agent session, the saved state doesn't bring the
+  earlier turns back, and the transcript does. Follow the conversation ID the server names (it moves a deleted
+  chat to a new one), and have a process that exits await `chatDeletionsSettled()`, as the Nitro server's
+  `plugins/temporary-chats.ts` does on SIGTERM (hypotheses §48 F128–F129).
 - **Entitlement-gated ≠ metered.** `gpt-6-think-deeper` (`Gpt_6_Reasoning`) and `claude-sonnet-5`
   (`Claude_Sonnet_5`) need the same paid
   scenario as Opus but carry **no** priority-access budget and throttle like everything else,

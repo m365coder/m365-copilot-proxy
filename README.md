@@ -301,6 +301,17 @@ the Copilot history sidebar while multi-turn context still works for the live
 conversation. Set `M365_SAVE_HISTORY=1` before starting the proxy only if you
 deliberately want proxy chats saved in Copilot history.
 
+The `augloop-*` models have no temporary mode: the server saves every Excel
+agent chat in Copilot history, where Excel's chat history shows it. So the
+proxy deletes each of these chats 5 seconds after a turn when no next turn has
+started, with the call Excel's own Delete uses, and on shutdown (SIGTERM,
+SIGINT) it waits for those deletions. A proxy killed outright within those
+seconds leaves its last chat. The conversation keeps its context: each turn
+sends only its new message, and the first turn over a new connection sends the
+whole transcript, which the server reads when it can't resume a deleted chat.
+`node scripts/augloop-history.mjs` lists the Excel agent chats in history.
+Details: [API doc §13](docs/m365-copilot-api.md), [hypotheses §48 F128–F129](docs/hypotheses.md).
+
 ### 6. Run on NixOS (systemd service)
 
 The proxy is a [Nitro](https://nitro.build/) service. The flake exposes a package
