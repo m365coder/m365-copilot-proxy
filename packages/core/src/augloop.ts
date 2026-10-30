@@ -666,6 +666,7 @@ export async function deleteExcelChats(token: string, conversationIds: string[])
  */
 export class ChatDeleter {
   private readonly due = new Set<string>();
+  private readonly deleted = new Set<string>();
   private pending: { timer: ReturnType<typeof setTimeout>; settle: () => void; done: Promise<void> } | null = null;
   private running: Promise<void> = Promise.resolve();
 
@@ -694,7 +695,7 @@ export class ChatDeleter {
       const ids = [...this.due];
       this.running = this.deleteChats(ids).then(
         () => {
-          for (const id of ids) this.due.delete(id);
+          for (const id of ids) { this.due.delete(id); this.deleted.add(id); }
           log.info(`Deleted chat ${ids.join(", ")} from Copilot history (temporary chat)`);
         },
         (err: Error) => log.info(`Couldn't delete chat ${ids.join(", ")} from Copilot history: ${err.message}`),
@@ -702,6 +703,11 @@ export class ChatDeleter {
       void this.running.then(settle);
     }, this.delayMs);
     this.pending = { timer, settle, done };
+  }
+
+  /** Whether this chat has been deleted: a new connection can't resume its session (F129). */
+  wasDeleted(conversationId: string): boolean {
+    return this.deleted.has(conversationId);
   }
 
   /** Resolves once no deletion is pending or running. */
@@ -731,13 +737,13 @@ export interface AugLoopConversationOptions {
 
 /**
  * The messages a turn sends: its own (the transcript's last), or the whole
- * transcript on a new connection. The server's agent session carries the
- * conversation, but a new connection may not resume it (a deleted chat's never
- * is), and then the server reads the transcript (hypotheses §48 F129). Exported
+ * transcript when the server can't resume the agent's session, which carries the
+ * conversation. That is a new connection's first turn after the chat was
+ * deleted; then the server reads the transcript (hypotheses §48 F129). Exported
  * for tests.
  */
-export function turnMessages(transcript: readonly { role: string; content: string }[], newConnection: boolean): { role: string; content: string }[] {
-  return (newConnection ? transcript : transcript.slice(-1)).map((m) => ({ ...m }));
+export function turnMessages(transcript: readonly { role: string; content: string }[], whole: boolean): { role: string; content: string }[] {
+  return (whole ? transcript : transcript.slice(-1)).map((m) => ({ ...m }));
 }
 
 /**
@@ -815,17 +821,17 @@ export function buildChatSignal(opts: {
  * One conversation with the Excel agent. Turns go one at a time over a
  * connection opened on the first and reused while it lives. The server's agent
  * session, found by the conversation ID, carries the conversation, so a turn
- * sends only its own message; on a new connection it sends the whole
- * transcript (turnMessages). The agent's saved state goes back when the server
- * asks for it. A temporary chat is deleted from Copilot history after its turns
- * (ChatDeleter).
+ * sends only its own message; on a new connection after the chat was deleted,
+ * it sends the whole transcript (turnMessages). The agent's saved state goes
+ * back when the server asks for it. A temporary chat is deleted from Copilot
+ * history after its turns (ChatDeleter).
  */
 export class AugLoopConversation {
   private conversationId = "";
   private readonly messages: { role: "user" | "assistant"; content: string }[] = [];
   private readonly states = new Map<string, string>();
   private connection: AugLoopConnection | null = null;
-  /** The connection the last turn went over: a turn over another sends the whole transcript. */
+  /** The connection the last turn went over, to tell a new connection's first turn. */
   private lastTurnConnection: AugLoopConnection | null = null;
   private readonly deleter: ChatDeleter | null;
   private chain: Promise<unknown> = Promise.resolve();
@@ -943,9 +949,10 @@ export class AugLoopConversation {
     this.messages.push({ role: "user", content: text });
     const newConnection = c !== this.lastTurnConnection;
     this.lastTurnConnection = c;
-    const messages = turnMessages(this.messages, newConnection);
+    const unresumable = newConnection && this.deleter?.wasDeleted(this.conversationId) === true;
+    const messages = turnMessages(this.messages, unresumable);
     recordTurn(); // the throttle-avoidance bucket counts what the next line counts (turn-budget.ts)
-    log.info(`Chat turn ${turn}: model=${model}, agentModelType=${modelType}, cid=${this.conversationId || "new"}, sends=${messages.length > 1 ? `the transcript (${messages.length} messages, new connection)` : "its message"}, text=${JSON.stringify(trunc(text, 200))}`);
+    log.info(`Chat turn ${turn}: model=${model}, agentModelType=${modelType}, cid=${this.conversationId || "new"}, sends=${unresumable ? `the transcript (${messages.length} messages: a new connection after the chat's deletion)` : "its message"}, text=${JSON.stringify(trunc(text, 200))}`);
 
     const out = new AugLoopTurnStream();
     out.turnCount = this.turns;

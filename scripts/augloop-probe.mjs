@@ -11,7 +11,8 @@
 //   env: TURNS="first|||second" (default: one short question), M365_AUGLOOP_LABEL,
 //        M365_DUMP_FRAMES=1 (frames under ~/.config/opencode-m365/frames/augloop-*.ndjson),
 //        RECONNECT_BEFORE=<turn>: before that turn, let the chat's deletion run and close the
-//        connection, so the turn goes over a new one and sends the whole transcript (F129),
+//        connection, so the turn goes over a new one; after a deletion it sends the whole
+//        transcript (F129),
 //        M365_SAVE_HISTORY=1: keep the chats in Copilot history. Without it, as in the proxy,
 //        each chat is deleted from history 5 s after its last turn, and the probe waits for that.
 // Cost: one AugLoop turn and one new conversation per model, plus a turn per extra TURNS

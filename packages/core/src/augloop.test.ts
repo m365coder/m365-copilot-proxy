@@ -304,9 +304,12 @@ describe("a temporary chat (ChatDeleter)", () => {
     await d.turnStarting(); // the next turn came first, and the server moved it to conv-2
     d.turnEnded("conv-2");
     await vi.advanceTimersByTimeAsync(5_000);
+    expect(d.wasDeleted("conv-1")).toBe(false); // that deletion failed
     d.turnEnded("conv-2");
     await vi.advanceTimersByTimeAsync(5_000);
     expect(calls).toEqual([["conv-1", "conv-2"], ["conv-1", "conv-2"]]);
+    expect(d.wasDeleted("conv-1") && d.wasDeleted("conv-2")).toBe(true);
+    expect(d.wasDeleted("conv-3")).toBe(false);
   });
 
   it("holds the next turn until a deletion in progress is done, and a failed one doesn't stop it", async () => {
@@ -353,7 +356,7 @@ describe("a temporary chat (ChatDeleter)", () => {
 });
 
 describe("turnMessages", () => {
-  it("sends a turn's own message, and the whole transcript on a new connection", () => {
+  it("sends a turn's own message, and the whole transcript when the session can't be resumed", () => {
     const transcript = [{ role: "user", content: "a" }, { role: "assistant", content: "b" }, { role: "user", content: "c" }];
     expect(turnMessages(transcript, false)).toEqual([{ role: "user", content: "c" }]);
     expect(turnMessages(transcript, true)).toEqual(transcript);
