@@ -21,7 +21,7 @@
 // clicks only "Use a verification code" (never Text or Call, which send an SMS to or ring the account's
 // phone) and enters the TOTP code (docs/hypotheses.md §47 F117). Like the proxy's login, it presents the
 // device certificate that secrets.json names (clientCertPath, clientCertPassword) to
-// device.login.microsoftonline.com.
+// device.login.microsoftonline.com, and takes its User-Agent from M365_LOGIN_UA.
 //
 // The endpoint runs any JS it is sent, as this account: it listens on 127.0.0.1 only, needs the token, and
 // exits after IDLE_MS (default 45 min) without a command. Saved bodies skip the sign-in hosts and redact
@@ -59,7 +59,7 @@ const context = await chromium.launchPersistentContext(PROFILE, {
   headless: true,
   executablePath: process.env.CHROMIUM_PATH ?? "/usr/sbin/chromium-browser",
   args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
-  userAgent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+  userAgent: process.env.M365_LOGIN_UA ?? "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
   locale: "en-GB", timezoneId: "Europe/Copenhagen", viewport: { width: 1400, height: 900 },
   clientCertificates: creds.clientCertPath
     ? [{ origin: "https://device.login.microsoftonline.com", pfxPath: resolve(cfg, creds.clientCertPath), passphrase: creds.clientCertPassword }]
