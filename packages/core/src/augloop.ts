@@ -1,4 +1,6 @@
-// AugLoop: the Excel agent's models over the AugLoop service (API doc §13).
+// AugLoop: the Office apps' Copilot agents and their models over the AugLoop
+// service (API doc §13). This file has the connection, which both use, the
+// history deletion, and the Excel agent; augloop-word.ts has Word's agent.
 //
 // Excel for the web's Copilot (Agent Mode) talks to `wss://augloop.office.com`,
 // not to Chathub, and picks its model by a slot (`agentModelType`, augloop-models.ts).
@@ -22,7 +24,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { decodeJwt, type CopilotStream } from "./copilot.js";
-import { augLoopModelOf, isClaudeAugLoopModel } from "./augloop-models.js";
+import { augLoopModelOf, isClaudeAugLoopModel, type AugLoopApp } from "./augloop-models.js";
 import { foldStreamText } from "./session.js";
 import { createLogger, trunc, FRAME_DIR } from "./log.js";
 import { recordThrottle, recordTurn } from "./turn-budget.js";
@@ -54,6 +56,52 @@ const ACTIVATED = [
   "LoadAgentSessionStateAnnotation",
 ].map((a) => P + a);
 
+/** What a session tells the server about its client, per Office app (API doc §13). */
+export interface AugLoopClient {
+  app: AugLoopApp;
+  appName: string;
+  appVersion: string;
+  runtimeVersion: string;
+  /** The page the app's AugLoop session runs in: the WebSocket's Origin. */
+  origin: string;
+  /** The annotation types the session receives. */
+  activated: readonly string[];
+  /** Those of them whose errors the server reports as apologies, as the app's client asks. */
+  apologies: readonly string[];
+  /** Excel's permission check (`CheckPermissionSignal` → `UserAllowed`/`Forbidden`), run once the session is up. */
+  checkPermission: boolean;
+}
+
+export const EXCEL_CLIENT: AugLoopClient = {
+  app: "excel",
+  appName: "Excel",
+  appVersion: "16.0.20626.42304",
+  runtimeVersion: "3.0.667",
+  origin: "https://excel.officeapps.live.com",
+  activated: ACTIVATED,
+  apologies: [],
+  checkPermission: true,
+};
+
+/** Word for the web's session, as its editor opens it, with the OfficeAgent annotations its Copilot pane reads. */
+export const WORD_CLIENT: AugLoopClient = {
+  app: "word",
+  appName: "Word",
+  appVersion: "20261027.8",
+  runtimeVersion: "3.0.123",
+  origin: "https://word-edit.officeapps.live.com",
+  activated: [
+    "OfficeAgentAnnotation",
+    "OfficeAgentInvokeFunctionAnnotation",
+    "OfficeAgentSetClpAnnotation",
+    "OfficeAgentModelSelectionAdjustedAnnotation",
+    "OfficeAgentSignalSendResultAnnotation",
+    "OfficeAgentPendingActionAnnotation",
+  ].map((a) => `AugLoop_OfficeAgent_${a}`),
+  apologies: ["AugLoop_OfficeAgent_OfficeAgentAnnotation"],
+  checkPermission: false,
+};
+
 /** What the agent's workbook script gets back: Excel's own reply for an empty one-sheet book. */
 const EMPTY_WORKBOOK = JSON.stringify({
   activeCell: "Sheet1!A1",
@@ -75,7 +123,7 @@ const CONNECT_TIMEOUT_MS = 30_000;
 const KEEPALIVE_MS = 30_000;
 const IDLE_CLOSE_MS = 10 * 60_000;
 /** A turn with no frame for this long is given up. The agent can work for minutes. */
-const TURN_SILENCE_MS = 5 * 60_000;
+export const TURN_SILENCE_MS = 5 * 60_000;
 const TOKEN_MARGIN_MS = 5 * 60_000;
 
 function host(): string {
@@ -83,6 +131,10 @@ function host(): string {
 }
 
 const H = (T: string, B: string[] = MESSAGE) => ({ T_: T, B_: B });
+/** An AugLoop type header (`H_`): the type and its base types. */
+export const typeHeader = H;
+/** The prefix of the session protocol's message types. */
+export const SESSION_PROTOCOL = SESSION;
 
 // --- Frame dumps (M365_DUMP_FRAMES) -----------------------------------------------
 
@@ -282,7 +334,7 @@ export function outcomeOfStatus(status: string): AugLoopOutcome | null {
 
 // --- Connection ------------------------------------------------------------------------
 
-type Json = Record<string, any>;
+export type Json = Record<string, any>;
 
 interface Socket {
   ws: WebSocket;
@@ -306,7 +358,7 @@ export class AugLoopConnection {
   allowed: Json | null = null;
   tokenExpiresAt = 0;
 
-  private constructor(readonly flights: string, private readonly dumpId: string) {}
+  private constructor(readonly flights: string, private readonly dumpId: string, readonly client: AugLoopClient) {}
 
   get alive(): boolean {
     return !this.closed && this.socket?.ws.readyState === WebSocket.OPEN;
@@ -316,8 +368,8 @@ export class AugLoopConnection {
   nextCv(): string { return `${this.baseCv}.${++this.cvN}`; }
   nextContextId(): string { return `C${++this.ctxN}`; }
 
-  static async open(flights: string, token: string, signal?: AbortSignal): Promise<AugLoopConnection> {
-    const c = new AugLoopConnection(flights, `augloop-${randomUUID()}`);
+  static async open(flights: string, token: string, signal?: AbortSignal, client: AugLoopClient = EXCEL_CLIENT): Promise<AugLoopConnection> {
+    const c = new AugLoopConnection(flights, `augloop-${randomUUID()}`, client);
     try {
       await c.connect(token, signal);
       return c;
@@ -329,9 +381,9 @@ export class AugLoopConnection {
 
   private clientMetadata() {
     return {
-      appName: "Excel",
+      appName: this.client.appName,
       appPlatform: "Web",
-      appVersion: "16.0.20626.42304",
+      appVersion: this.client.appVersion,
       uiLanguage: "en-US",
       releaseAudienceGroup: "Production",
       releaseChannel: null,
@@ -340,7 +392,7 @@ export class AugLoopConnection {
       flights: this.flights,
       userSystemTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       isClientTelemetrySampled: false,
-      runtimeVersion: "3.0.667",
+      runtimeVersion: this.client.runtimeVersion,
       docSessionId: this.sessionId,
     };
   }
@@ -348,7 +400,7 @@ export class AugLoopConnection {
   private openSocket(url: string, onMessage: (m: Json) => void, signal?: AbortSignal): Promise<Socket> {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url, {
-        headers: { Origin: "https://excel.officeapps.live.com", "User-Agent": USER_AGENT, "Cache-Control": "no-cache" },
+        headers: { Origin: this.client.origin, "User-Agent": USER_AGENT, "Cache-Control": "no-cache" },
         perMessageDeflate: false,
       });
       const timer = setTimeout(() => { ws.terminate(); reject(new Error(`AugLoop: no connection to ${url.slice(0, 60)} in ${CONNECT_TIMEOUT_MS / 1000}s`)); }, CONNECT_TIMEOUT_MS);
@@ -422,17 +474,23 @@ export class AugLoopConnection {
     s.send({ protocolVersion: 2, clientMetadata: this.clientMetadata(), sessionKey: init.sessionKey, origin: init.origin, returnWorkflowInputTypes: false, enableRemoteExecutionNotification: false, createBlobStorageContainer: false, H_: H(`${SESSION}SessionInitMessage`), cv: this.nextCv(), messageId: this.nextMessageId() });
     const provisioned = this.provisionToken(token);
     let n = 0;
-    for (const type of ACTIVATED) {
-      s.send({ annotationType: type, token: `${type}-${++n}`, ignoreExistingAnnotations: false, sendStateUpdates: false, returnAnnotationDoesNotExist: true, sendApologies: false, H_: H(`${SESSION}AnnotationActivationMessage`), cv: this.nextCv(), messageId: this.nextMessageId() });
+    for (const type of this.client.activated) {
+      s.send({ annotationType: type, token: `${type}-${++n}`, ignoreExistingAnnotations: false, sendStateUpdates: false, returnAnnotationDoesNotExist: true, sendApologies: this.client.apologies.includes(type), H_: H(`${SESSION}AnnotationActivationMessage`), cv: this.nextCv(), messageId: this.nextMessageId() });
     }
-    const permission = this.waitFor((m) => /(UserAllowed|Forbidden)Annotation$/.test(m.annotationType ?? ""), CONNECT_TIMEOUT_MS, "permission check");
-    s.send({ cv: this.nextCv(), ops: [{ parentPath: ["Signal", `${P}CheckPermissionSignal`], items: [{ id: randomUUID(), body: { H_: H(`${P}CheckPermissionSignal`, ["AugLoop_Signals_Signal"]) }, contextId: this.nextContextId() }], H_: H("AugLoop_Signals_SignalOperation", ["AugLoop_Core_Operation"]) }], H_: H(`${SESSION}SyncMessage`), messageId: this.nextMessageId() });
-    await provisioned;
-    const verdict = await permission;
-    const body = verdict.ops?.[0]?.items?.[0]?.body ?? {};
-    if (/Forbidden/.test(verdict.annotationType)) throw new Error(`AugLoop: the Excel agent is forbidden for this account (${trunc(JSON.stringify(body), 300)})`);
-    this.allowed = body;
-    log.info(`AugLoop session ready: isAnthropicAvailable=${body.isAnthropicAvailable}, isOutOfCredits=${body.isOutOfCredits}, token for ${Math.round((this.tokenExpiresAt - Date.now()) / 60_000)} min`);
+    const minutes = () => Math.round((this.tokenExpiresAt - Date.now()) / 60_000);
+    if (!this.client.checkPermission) {
+      await provisioned;
+      log.info(`AugLoop session ready (${this.client.appName}): token for ${minutes()} min`);
+    } else {
+      const permission = this.waitFor((m) => /(UserAllowed|Forbidden)Annotation$/.test(m.annotationType ?? ""), CONNECT_TIMEOUT_MS, "permission check");
+      s.send({ cv: this.nextCv(), ops: [{ parentPath: ["Signal", `${P}CheckPermissionSignal`], items: [{ id: randomUUID(), body: { H_: H(`${P}CheckPermissionSignal`, ["AugLoop_Signals_Signal"]) }, contextId: this.nextContextId() }], H_: H("AugLoop_Signals_SignalOperation", ["AugLoop_Core_Operation"]) }], H_: H(`${SESSION}SyncMessage`), messageId: this.nextMessageId() });
+      await provisioned;
+      const verdict = await permission;
+      const body = verdict.ops?.[0]?.items?.[0]?.body ?? {};
+      if (/Forbidden/.test(verdict.annotationType)) throw new Error(`AugLoop: the Excel agent is forbidden for this account (${trunc(JSON.stringify(body), 300)})`);
+      this.allowed = body;
+      log.info(`AugLoop session ready: isAnthropicAvailable=${body.isAnthropicAvailable}, isOutOfCredits=${body.isOutOfCredits}, token for ${minutes()} min`);
+    }
     this.keepalive = setInterval(() => { try { this.socket?.send("~"); } catch {} }, KEEPALIVE_MS);
     this.keepalive.unref?.();
     this.touch();
@@ -467,6 +525,16 @@ export class AugLoopConnection {
   listen(l: (m: Json) => void): () => void {
     this.listeners.add(l);
     return () => { this.listeners.delete(l); };
+  }
+
+  /** Stop the workflow a signal started, as Word's Stop button does: AugLoop's own cancel, by the signal's item ID. */
+  cancelSignal(signalType: string, itemId: string): void {
+    this.send({
+      cv: this.nextCv(),
+      ops: [{ parentPath: ["Signal", signalType], items: [{ id: itemId }], H_: H("AugLoop_Core_CancelSignalTriggeredWorkflowExecutionOperation", ["AugLoop_Core_Operation"]) }],
+      H_: H(`${SESSION}SyncMessage`),
+      messageId: this.nextMessageId(),
+    });
   }
 
   /** Stop the session's running query, as Excel's Stop button does. */
@@ -610,10 +678,35 @@ export function applyOutput(out: AugLoopTurnStream, b: Json): AugLoopOutcome | n
 
 // --- History -----------------------------------------------------------------------------
 
-// The server saves every Excel agent chat in Copilot history, and AugLoop has no
-// temporary-chat mode (hypotheses §48 F128). Excel's history pane lists and deletes
-// these chats here.
+// The server saves every Office agent chat in Copilot history, and AugLoop has no
+// temporary-chat mode (hypotheses §48 F128). Each app's history pane lists and
+// deletes its chats here, under its own source and scenario.
 const HISTORY_URL = "https://substrate.office.com/m365Copilot/";
+const HISTORY: Readonly<Record<AugLoopApp, { source: string; scenario: string; productThreadType: string }>> = {
+  excel: { source: "excel", scenario: "ExcelSidepaneWorkCopilot", productThreadType: "Excel" },
+  word: { source: "word", scenario: "WordSidepaneWorkCopilot", productThreadType: "Word" },
+};
+
+function historyHeaders(token: string, app: AugLoopApp): Record<string, string> {
+  const { oid, tid } = decodeJwt(token);
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "X-ClientRequestId": randomUUID(),
+    "X-Scenario": HISTORY[app].scenario,
+    "X-AnchorMailbox": `Oid:${oid}@${tid}`,
+    "X-RoutingParameter-SessionKey": oid,
+  };
+}
+
+/** An app's agent chats in Copilot history, as its history pane lists them. `token` is the Chathub token (getToken). */
+export async function listAgentChats(token: string, app: AugLoopApp): Promise<Json[]> {
+  const h = HISTORY[app];
+  const request = { source: h.source, traceId: "", productThreadType: h.productThreadType, mergeWorkWebChats: true, threadType: "appchat" };
+  const res = await fetch(`${HISTORY_URL}GetChats?request=${encodeURIComponent(JSON.stringify(request))}`, { headers: historyHeaders(token, app) });
+  if (!res.ok) throw new Error(`GetChats: HTTP ${res.status}`);
+  return (await res.json()).chats ?? [];
+}
 
 /** How long after a turn, with no next turn started, a temporary chat is deleted. */
 export const HISTORY_DELETE_DELAY_MS = 5_000;
@@ -631,22 +724,14 @@ export async function chatDeletionsSettled(): Promise<void> {
 }
 
 /**
- * Delete Excel agent chats from Copilot history, as Excel's own Delete does.
+ * Delete an app's agent chats from Copilot history, as its own Delete does.
  * `token` is the Chathub token (getToken).
  */
-export async function deleteExcelChats(token: string, conversationIds: string[]): Promise<void> {
-  const { oid, tid } = decodeJwt(token);
+export async function deleteAgentChats(token: string, conversationIds: string[], app: AugLoopApp = "excel"): Promise<void> {
   const res = await fetch(`${HISTORY_URL}DeleteConversation`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "X-ClientRequestId": randomUUID(),
-      "X-Scenario": "ExcelSidepaneWorkCopilot",
-      "X-AnchorMailbox": `Oid:${oid}@${tid}`,
-      "X-RoutingParameter-SessionKey": oid,
-    },
-    body: JSON.stringify({ conversationIdsToDelete: conversationIds, source: "excel", traceId: randomUUID() }),
+    headers: historyHeaders(token, app),
+    body: JSON.stringify({ conversationIdsToDelete: conversationIds, source: HISTORY[app].source, traceId: randomUUID() }),
   });
   if (!res.ok) throw new Error(`DeleteConversation: HTTP ${res.status}`);
   const body: Json = await res.json().catch(() => null);
@@ -731,7 +816,7 @@ export interface AugLoopConversationOptions {
   getToken: () => Promise<string>;
   /** A Graph token, for the tenant's sensitivity labels. */
   getGraphToken: () => Promise<string | null>;
-  /** Deletes chats from Copilot history (deleteExcelChats). Given for a temporary chat. */
+  /** Deletes chats from Copilot history (deleteAgentChats). Given for a temporary chat. */
   deleteChats?: (conversationIds: string[]) => Promise<void>;
 }
 

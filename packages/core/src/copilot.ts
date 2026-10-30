@@ -1,6 +1,6 @@
 import { JwtClaims } from "./schemas.js";
 import type { MeteredBudget } from "./priority-access.js";
-import { AUGLOOP_MODEL_IDS, augLoopModelOf, isAugLoopModel } from "./augloop-models.js";
+import { AUGLOOP_MODEL_IDS, augLoopModelOf, isAugLoopModel, wordAgentModelOf } from "./augloop-models.js";
 
 // Model name → tone mapping.
 // The server VALIDATES tones (an unknown tone errors with "Failed to invoke
@@ -194,11 +194,13 @@ const MODEL_TONES: Record<string, string> = {
 export function getToneForModel(model: string): string {
   const exact = MODEL_TONES[model];
   if (exact) return exact;
-  // The Excel agent's models (augloop-models.ts): the "tone" is the slot, its
-  // `agentModelType`. Before the patterns below, which would take
-  // `augloop-claude-opus-5.5` for Chathub's Claude_Opus.
+  // The Office agents' models (augloop-models.ts): the "tone" is the Excel slot,
+  // its `agentModelType`, or Word's model entry (`modelId[:reasoningEffort]`). Before the patterns
+  // below, which would take `augloop-excel-claude-opus-5.5` for Chathub's Claude_Opus.
   const augloop = augLoopModelOf(model);
   if (augloop) return augloop.modelType;
+  const word = wordAgentModelOf(model);
+  if (word) return word.reasoningEffort ? `${word.modelId}:${word.reasoningEffort}` : word.modelId;
   // Unmapped `claude-*` strings (e.g. the `claude-opus-5[1m]` a Claude Code client
   // sends) must NOT fall back to the `magic` (GPT) tone. Empirically (route-probe,
   // 2026-07-07) the magic path does not tool-call right now — 0/2, confabulates

@@ -42,12 +42,12 @@ describe("analyze-arms", () => {
     const cid = "01234567-89ab-cdef-0123-456789abcdef";
     const sid = "fedcba98-7654-3210-fedc-ba9876543210";
     const log = [
-      `[t] [INFO] [handler] Chat completion: model=augloop-claude-opus-5.5, stream=false, messages=2, turn=0, mode=full, cid=${cid}`,
-      `[t] [INFO] [model] run: model=augloop-claude-opus-5.5, agent=none, turn=0, sid=${sid}, cid=${cid}, via=AugLoop, text="…"`,
+      `[t] [INFO] [handler] Chat completion: model=augloop-excel-claude-opus-5.5, stream=false, messages=2, turn=0, mode=full, cid=${cid}`,
+      `[t] [INFO] [model] run: model=augloop-excel-claude-opus-5.5, agent=none, turn=0, sid=${sid}, cid=${cid}, via=AugLoop, text="…"`,
       "[t] [INFO] [augloop] Agent state saved (turn 0): served by custom-substrate-anthropic-claude-opus-5-5; the agent ran its own tools: python_execution",
       "[t] [INFO] [augloop] Turn 0 ended: Success, 120 chars",
-      `[t] [INFO] [handler] Chat completion: model=augloop-claude-opus-5.5, stream=false, messages=4, new=2, turn=1, mode=delta, cid=${cid}`,
-      `[t] [INFO] [model] run: model=augloop-claude-opus-5.5, agent=none, turn=1, sid=${sid}, cid=${cid}, via=AugLoop, text="…"`,
+      `[t] [INFO] [handler] Chat completion: model=augloop-excel-claude-opus-5.5, stream=false, messages=4, new=2, turn=1, mode=delta, cid=${cid}`,
+      `[t] [INFO] [model] run: model=augloop-excel-claude-opus-5.5, agent=none, turn=1, sid=${sid}, cid=${cid}, via=AugLoop, text="…"`,
       "[t] [INFO] [augloop] Turn result: Disengaged (error_rai_policy)",
       "[t] [INFO] [augloop] Turn 1 ended: Disengaged (error_rai_policy), 0 chars",
     ].join("\n");

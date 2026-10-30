@@ -18,7 +18,10 @@ export {
   buildChatSignal,
   ChatDeleter,
   chatDeletionsSettled,
-  deleteExcelChats,
+  deleteAgentChats,
+  listAgentChats,
+  EXCEL_CLIENT,
+  WORD_CLIENT,
   HISTORY_DELETE_DELAY_MS,
   turnMessages,
   outcomeOfStatus,
@@ -29,6 +32,7 @@ export {
   lastAgentTurnOf,
   readZipEntry,
   redactFrame,
+  type AugLoopClient,
   type AugLoopConversationOptions,
   type AugLoopOutcome,
   type SensitivityLabel,
@@ -36,11 +40,24 @@ export {
 } from "./augloop.js";
 
 export {
+  WordAgentConversation,
+  buildWordSignal,
+  applyWordAnswer,
+  EMPTY_DOCUMENT_HTML,
+  type WordAnswerState,
+} from "./augloop-word.js";
+
+export {
   augLoopModelOf,
+  wordAgentModelOf,
+  augLoopAppOf,
   isAugLoopModel,
   isClaudeAugLoopModel,
   AUGLOOP_MODEL_IDS,
+  WORD_AGENT_FLIGHTS,
+  type AugLoopApp,
   type AugLoopModel,
+  type WordAgentModel,
 } from "./augloop-models.js";
 
 export {

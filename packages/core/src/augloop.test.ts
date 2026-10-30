@@ -7,15 +7,17 @@ import {
   applyOutput,
   augLoopLabelSetting,
   buildChatSignal,
-  deleteExcelChats,
+  deleteAgentChats,
   turnMessages,
   outcomeOfStatus,
   pickSensitivityLabel,
   lastAgentTurnOf,
   readZipEntry,
   redactFrame,
+  listAgentChats,
 } from "./augloop.js";
-import { AUGLOOP_MODEL_IDS, augLoopModelOf, isAugLoopModel, isClaudeAugLoopModel } from "./augloop-models.js";
+import { applyWordAnswer, buildWordSignal, type WordAnswerState } from "./augloop-word.js";
+import { AUGLOOP_MODEL_IDS, WORD_AGENT_FLIGHTS, augLoopAppOf, augLoopModelOf, isAugLoopModel, isClaudeAugLoopModel, wordAgentModelOf } from "./augloop-models.js";
 import { getAvailableModels, getToneForModel, meteredBudgetOf, prefersPaidScenario, requestUsesAgent, resetPaidSeat } from "./copilot.js";
 import { defaultFramingForModel, FRAMING_VARIANT_NAMES } from "./fenced.js";
 import { priorityAccessExhaustionOf } from "./priority-access.js";
@@ -29,40 +31,129 @@ afterEach(() => {
 
 describe("AugLoop model IDs", () => {
   it("map each advertised ID to its slot and the flights that name the slot's model", () => {
-    const opus = augLoopModelOf("augloop-claude-opus-5.5")!;
+    const opus = augLoopModelOf("augloop-excel-claude-opus-5.5")!;
     expect(opus.modelType).toBe("ClaudeSlot6");
     expect(opus.flights).toContain("Microsoft.Office.Excel.FA000000124.AugLoop.ExcelAgent.ClaudeSlot6ModelId:custom-substrate-anthropic-claude-opus-5-5");
     expect(opus.flights).toContain("Microsoft.Office.Excel.FA000000124.AugLoop.OfficeAgent.OfficeAgent.ClaudeSlot6ModelId:custom-substrate-anthropic-claude-opus-5-5");
     expect(opus.flights).toContain("Microsoft.Office.Excel.AugLoop.DailyMeteringUnit.ClaudeSlot6:ClaudeOpus55QueryDailyExcel");
-    expect(augLoopModelOf("augloop-claude-sonnet-5.5")!.modelType).toBe("ClaudeSlot7");
-    expect(augLoopModelOf("augloop-gpt-6.1-sol")!.flights).toContain("Microsoft.Office.Excel.AugLoop.ExcelAgent.Gpt5Slot6ModelId:custom-substrate-gpt-61-sol");
+    expect(augLoopModelOf("augloop-excel-claude-sonnet-5.5")!.modelType).toBe("ClaudeSlot7");
+    expect(augLoopModelOf("augloop-excel-gpt-6.1-sol")!.flights).toContain("Microsoft.Office.Excel.AugLoop.ExcelAgent.Gpt5Slot6ModelId:custom-substrate-gpt-61-sol");
     for (const id of AUGLOOP_MODEL_IDS) expect(isAugLoopModel(id)).toBe(true);
   });
 
-  it("send any slot as augloop:<agentModelType>, with the flights only of a slot it knows", () => {
-    expect(augLoopModelOf("augloop:ClaudeSlot7")).toEqual(augLoopModelOf("augloop-claude-sonnet-5.5"));
-    expect(augLoopModelOf("augloop:ClaudeSonnetSlot5")).toEqual({ modelType: "ClaudeSonnetSlot5", flights: [] });
-    expect(augLoopModelOf("augloop:not a slot")).toBeNull();
+  it("send any slot as augloop-excel:<agentModelType>, with the flights only of a slot it knows", () => {
+    expect(augLoopModelOf("augloop-excel:ClaudeSlot7")).toEqual(augLoopModelOf("augloop-excel-claude-sonnet-5.5"));
+    expect(augLoopModelOf("augloop-excel:ClaudeSonnetSlot5")).toEqual({ modelType: "ClaudeSonnetSlot5", flights: [] });
+    expect(augLoopModelOf("augloop-excel:not a slot")).toBeNull();
+    expect(augLoopModelOf("augloop:ClaudeSlot7")).toBeNull(); // the old prefix
     expect(augLoopModelOf("claude-opus-5.5")).toBeNull();
-    expect(isClaudeAugLoopModel("augloop-claude-opus-5")).toBe(true);
-    expect(isClaudeAugLoopModel("augloop-gpt-6-sol")).toBe(false);
+    expect(isClaudeAugLoopModel("augloop-excel-claude-opus-5")).toBe(true);
+    expect(isClaudeAugLoopModel("augloop-excel-gpt-6-sol")).toBe(false);
   });
 
   it("route as the Excel agent, not as Chathub's tones", () => {
-    expect(getToneForModel("augloop-claude-opus-5.5")).toBe("ClaudeSlot6"); // not Claude_Opus
-    expect(getToneForModel("augloop:Gpt5Slot4")).toBe("Gpt5Slot4");
+    expect(getToneForModel("augloop-excel-claude-opus-5.5")).toBe("ClaudeSlot6"); // not Claude_Opus
+    expect(getToneForModel("augloop-excel:Gpt5Slot4")).toBe("Gpt5Slot4");
     process.env.M365_FORCE_AGENT = "1";
-    expect(requestUsesAgent("augloop-claude-opus-5.5", true)).toBe(false);
-    expect(meteredBudgetOf("augloop-claude-opus-5.5")).toBeNull();
-    expect(prefersPaidScenario("augloop-claude-sonnet-5.5")).toBe(false);
+    expect(requestUsesAgent("augloop-excel-claude-opus-5.5", true)).toBe(false);
+    expect(meteredBudgetOf("augloop-excel-claude-opus-5.5")).toBeNull();
+    expect(prefersPaidScenario("augloop-excel-claude-sonnet-5.5")).toBe(false);
     expect(getAvailableModels()).toEqual(expect.arrayContaining([...AUGLOOP_MODEL_IDS]));
-    expect(getAvailableModels().some((m) => m.startsWith("augloop:"))).toBe(false);
+    expect(getAvailableModels().some((m) => m.startsWith("augloop-excel:"))).toBe(false);
   });
 
   it("default to a user-voice framing", () => {
-    const framing = defaultFramingForModel("augloop-claude-opus-5.5");
+    const framing = defaultFramingForModel("augloop-excel-claude-opus-5.5");
     expect(FRAMING_VARIANT_NAMES).toContain(framing);
     expect(framing).not.toBe("baseline");
+  });
+});
+
+describe("Word's agent", () => {
+  it("maps each Word model ID to the model ID and reasoning level Word's client sends, and routes it as an AugLoop model", () => {
+    expect(wordAgentModelOf("augloop-word-claude-sonnet-5.5")).toEqual({ modelId: "anthropic-claude-sonnet-5-5" });
+    expect(wordAgentModelOf("augloop-word-claude-opus-5.5")).toEqual({ modelId: "Opus55" });
+    expect(wordAgentModelOf("augloop-word-gpt-5.6-sol-quick")).toEqual({ modelId: "GPT56", reasoningEffort: "none" });
+    expect(wordAgentModelOf("augloop-word-gpt-5.6-sol-think-deeper")).toEqual({ modelId: "GPT56", reasoningEffort: "low" });
+    expect(wordAgentModelOf("augloop-word-gpt-6.1-sol")).toEqual({ modelId: "GPT6-sol", reasoningEffort: "low" });
+    expect(augLoopAppOf("augloop-word-gpt-6.1-sol")).toBe("word");
+    expect(augLoopAppOf("augloop-excel-gpt-6.1-sol")).toBe("excel");
+    expect(augLoopAppOf("gpt-6.1-sol")).toBeNull();
+    expect(augLoopModelOf("augloop-word-claude-opus-5.5")).toBeNull();
+    expect(getToneForModel("augloop-word-claude-opus-5.5")).toBe("Opus55"); // not Claude_Opus
+    expect(getToneForModel("augloop-word-gpt-5.6-sol-quick")).toBe("GPT56:none");
+    process.env.M365_FORCE_AGENT = "1";
+    expect(requestUsesAgent("augloop-word-claude-opus-5.5", true)).toBe(false);
+    expect(prefersPaidScenario("augloop-word-claude-sonnet-5.5")).toBe(false);
+    expect(defaultFramingForModel("augloop-word-claude-sonnet-5.5")).toBe(defaultFramingForModel("augloop-excel-claude-sonnet-5.5"));
+    expect(WORD_AGENT_FLIGHTS).toContain("Microsoft.Office.WordOnline.Augloop.OfficeAgent.EnableSonnet55:True");
+    expect(WORD_AGENT_FLIGHTS).toContain("Microsoft.Office.WordOnline.Augloop.OfficeAgent.EnableGpt6Sol:True");
+    expect(WORD_AGENT_FLIGHTS).not.toContain("Microsoft.Office.WordOnline.Augloop.OfficeAgent.EnableGpt6Sol:False");
+  });
+
+  it("sends any model ID as augloop-word:<modelId>[:<reasoningEffort>], without advertising the form", () => {
+    expect(wordAgentModelOf("augloop-word:Sonnet55")).toEqual({ modelId: "Sonnet55" });
+    expect(wordAgentModelOf("augloop-word:GPT56:low")).toEqual({ modelId: "GPT56", reasoningEffort: "low" });
+    expect(wordAgentModelOf("augloop-word:not an id")).toBeNull();
+    expect(wordAgentModelOf("augloop-word:GPT56:low:more")).toBeNull();
+    expect(augLoopAppOf("augloop-word:Sonnet55")).toBe("word");
+    expect(getAvailableModels().some((m) => m.startsWith("augloop-word:"))).toBe(false);
+  });
+
+  const base = { requestId: "r", signalId: "s", cv: "cv.1", contextId: "C1", messageId: "c9" };
+
+  it("asks for Chat only, with the model and its reasoning effort, and sends no document", () => {
+    const op = buildWordSignal({ ...base, conversationId: "", model: { modelId: "GPT56", reasoningEffort: "low" }, query: "hi", sensitivityLabel: { id: "label-id", priority: 2, name: "General Business (G)" } }).ops[0];
+    expect(op.parentPath).toEqual(["Signal", "AugLoop_OfficeAgent_OfficeAgentSignal"]);
+    const body = op.items[0].body;
+    expect(body.H_.T_).toBe("AugLoop_OfficeAgent_OfficeAgentSignal");
+    expect(body).toMatchObject({ conversationId: "", requestId: "r", isNewConversation: true, content: { messageType: "Chat", query: "hi" } });
+    expect(body.content.messageAnnotations).toHaveLength(1); // the AppContext alone: no FileUrl
+    expect(body.content.messageAnnotations[0].messageAnnotationMetadata).toEqual({
+      app: "Word", selectedModel: "GPT56", reasoningEffort: "low", webSearch: true, enterpriseSearch: false, interactionMode: "app_read_only", isConversationHandoff: false,
+    });
+    expect(JSON.parse(body.xMetadata.conversationSensitivityLabel)).toEqual({ id: "label-id", priority: 2 });
+  });
+
+  it("sends the server's conversation ID on later turns, and no label when none is configured", () => {
+    const body = buildWordSignal({ ...base, conversationId: "conv-1", model: { modelId: "Opus55" }, query: "again", sensitivityLabel: null }).ops[0].items[0].body;
+    expect(body).toMatchObject({ conversationId: "conv-1", isNewConversation: false });
+    expect(body.content.messageAnnotations[0].messageAnnotationMetadata).not.toHaveProperty("reasoningEffort");
+    expect(body).not.toHaveProperty("xMetadata");
+  });
+
+  const state = (): WordAnswerState => ({ messageId: null, base: "" });
+
+  it("takes each Chat annotation as the whole message so far, streams only what it adds, and ends on completed", async () => {
+    const out = new AugLoopTurnStream();
+    const s = state();
+    expect(applyWordAnswer(out, s, { messageType: "Progress", text: "", status: "working" })).toBeNull();
+    expect(applyWordAnswer(out, s, { messageType: "Chat", text: "Hello wor", status: "working", messageId: "m1" })).toBeNull();
+    expect(applyWordAnswer(out, s, { messageType: "Chat", text: "Hello world.\n\n", status: "working", messageId: "m1" })).toBeNull();
+    expect(applyWordAnswer(out, s, { messageType: "Chat", text: "Hello world.\n\n", status: "completed", messageId: "m1" })).toEqual({ kind: "done", result: { value: "Success" } });
+    expect(out.answer).toBe("Hello world.");
+    out.finish();
+    const parts: string[] = [];
+    for await (const p of out.stream()) parts.push(p);
+    expect(parts).toEqual(["Hello wor", "ld."]);
+  });
+
+  it("starts a new paragraph for a new message", () => {
+    const out = new AugLoopTurnStream();
+    const s = state();
+    applyWordAnswer(out, s, { messageType: "Chat", text: "First.", status: "working", messageId: "m1" });
+    applyWordAnswer(out, s, { messageType: "Chat", text: "Second.", status: "completed", messageId: "m2" });
+    expect(out.answer).toBe("First.\n\nSecond.");
+  });
+
+  it("maps a stop, a refusal, an approval request and a failure", () => {
+    const stopped = new AugLoopTurnStream();
+    expect(applyWordAnswer(stopped, state(), { messageType: "Disengaged", text: "Operation cancelled", status: "canceled" })).toEqual({ kind: "canceled" });
+    expect(stopped.answer).toBe("");
+    expect(applyWordAnswer(new AugLoopTurnStream(), state(), { messageType: "Disengaged", text: "I can't help with that.", status: "completed" })).toMatchObject({ kind: "disengaged", result: { value: "Disengaged" } });
+    expect(applyWordAnswer(new AugLoopTurnStream(), state(), { messageType: "RequireHumanInTheLoop", status: "working" })).toMatchObject({ kind: "fail" });
+    expect(applyWordAnswer(new AugLoopTurnStream(), state(), { messageType: "Chat", text: "", status: "failed", errorCode: "error_model_daily_limit" })).toMatchObject({ kind: "done", result: { value: "OutOfCredits" } });
+    expect(applyWordAnswer(new AugLoopTurnStream(), state(), { messageType: "Chat", text: "", status: "failed" })).toMatchObject({ kind: "done", result: { value: "InternalError", errorCode: "failed" } });
   });
 });
 
@@ -242,7 +333,7 @@ describe("the agent's saved state", () => {
   });
 });
 
-describe("deleteExcelChats", () => {
+describe("deleteAgentChats", () => {
   afterEach(() => vi.unstubAllGlobals());
   const OID = "01234567-89ab-cdef-0123-456789abcdef";
   const TID = "fedcba98-7654-3210-fedc-ba9876543210";
@@ -251,7 +342,7 @@ describe("deleteExcelChats", () => {
   it("deletes chats from Copilot history as Excel's Delete does", async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ conversationIdsDeleted: ["conv-1", "conv-2"], result: { value: "Success" } }), { status: 200 }));
     vi.stubGlobal("fetch", fetch);
-    await deleteExcelChats(token, ["conv-1", "conv-2"]);
+    await deleteAgentChats(token, ["conv-1", "conv-2"]);
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://substrate.office.com/m365Copilot/DeleteConversation");
     expect(init.method).toBe("POST");
@@ -264,11 +355,23 @@ describe("deleteExcelChats", () => {
     expect(JSON.parse(String(init.body))).toMatchObject({ conversationIdsToDelete: ["conv-1", "conv-2"], source: "excel" });
   });
 
+  it("deletes and lists Word's chats under Word's source and scenario", async () => {
+    const fetch = vi.fn(async (url: string) => new Response(JSON.stringify(url.includes("GetChats") ? { chats: [{ conversationId: "conv-2" }] } : { conversationIdsDeleted: ["conv-2"] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+    await deleteAgentChats(token, ["conv-2"], "word");
+    const [, del] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(del.headers).toMatchObject({ "X-Scenario": "WordSidepaneWorkCopilot" });
+    expect(JSON.parse(String(del.body))).toMatchObject({ conversationIdsToDelete: ["conv-2"], source: "word" });
+    expect(await listAgentChats(token, "word")).toEqual([{ conversationId: "conv-2" }]);
+    const [url] = fetch.mock.calls[1] as unknown as [string];
+    expect(JSON.parse(decodeURIComponent(url.split("request=")[1]))).toEqual({ source: "word", traceId: "", productThreadType: "Word", mergeWorkWebChats: true, threadType: "appchat" });
+  });
+
   it("fails when the server refuses, or doesn't name every chat as deleted", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 401 })));
-    await expect(deleteExcelChats(token, ["conv-1"])).rejects.toThrow("HTTP 401");
+    await expect(deleteAgentChats(token, ["conv-1"])).rejects.toThrow("HTTP 401");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ conversationIdsDeleted: ["conv-1"], result: { message: "1 conversation(s) deleted" } }), { status: 200 })));
-    await expect(deleteExcelChats(token, ["conv-1", "conv-2"])).rejects.toThrow("1 conversation(s) deleted");
+    await expect(deleteAgentChats(token, ["conv-1", "conv-2"])).rejects.toThrow("1 conversation(s) deleted");
   });
 });
 
@@ -367,9 +470,9 @@ describe("turnMessages", () => {
 describe("turn budget", () => {
   it("counts the Excel agent's turns and throttles with Chathub's", () => {
     const log = [
-      "[2026-10-30T07:00:30.101Z] [INFO] [augloop] Chat turn 0: model=augloop-claude-opus-5.5, agentModelType=ClaudeSlot6",
+      "[2026-10-30T07:00:30.101Z] [INFO] [augloop] Chat turn 0: model=augloop-excel-claude-opus-5.5, agentModelType=ClaudeSlot6",
       "[2026-10-30T07:01:30.101Z] [INFO] [augloop] Turn result: Throttled (error_user_throttled)",
-      "[2026-10-30T07:02:30.101Z] [INFO] [model] run: model=augloop-claude-opus-5.5, agent=none, turn=1, via=AugLoop",
+      "[2026-10-30T07:02:30.101Z] [INFO] [model] run: model=augloop-excel-claude-opus-5.5, agent=none, turn=1, via=AugLoop",
     ].join("\n");
     expect(parseEvents(log).map((e) => e.kind)).toEqual(["turn", "throttled"]);
   });
