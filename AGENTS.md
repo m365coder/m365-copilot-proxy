@@ -115,7 +115,7 @@ hypothesis that teaches us something.
 
 | Package | Role |
 |---|---|
-| `@m365-copilot/core` | auth (MSAL+Playwright), WebSocket client, sessions, agent mgmt, tool formatting, schemas, the AugLoop (Excel agent) client |
+| `@m365-copilot/core` | auth (MSAL+Playwright), WebSocket client, sessions, agent mgmt, tool formatting, schemas, the AugLoop (Excel and Word agents) client |
 | `@m365-copilot/proxy-lib` | OpenAI↔M365 translation: framework-free `createApp()` fetch handler, `SessionPool`, handler, tool-call parsing |
 | `@m365-copilot/proxy` | standalone **Nitro** service / proxy binary (`m365-proxy`); file-based `routes/`, startup-auth `plugins/`, builds to `.output/` |
 | `@m365-copilot/openclaw-plugin` | OpenClaw config generator + setup CLI |
@@ -255,7 +255,7 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   accounts, and the client's own request with only `tone` rewritten (`h.routeTone`) got the same answers as our
   probe on both (§47 F116). Sign-in can stop at "Verify your identity", a list of MFA methods: `driveAzureLogin`
   and the driver choose "Use a verification code", never Text or Call (§47 F117).
-- **The Excel agent's models (`augloop-*`) go to a second service, AugLoop, not Chathub** (API doc §13,
+- **The Excel agent's models (`augloop-excel-*`) go to a second service, AugLoop, not Chathub** (API doc §13,
   hypotheses §48). A slot (`agentModelType`, e.g. `ClaudeSlot6`) picks the model only together with the
   client's flights: `augloop-models.ts` sends each slot's `…ModelId` flights as Excel for the web's config names
   them, and every connection sends `EnableServerConversationId` (without it every turn ends
@@ -277,6 +277,16 @@ pnpm test:live      # M365_LIVE=1; live tests that hit real M365 (uses quota)
   deletion a new connection resumes the session. Follow the conversation ID the server names (it moves a deleted
   chat to a new one), and have a process that exits await `chatDeletionsSettled()`, as the Nitro server's
   `plugins/temporary-chats.ts` does on SIGTERM (hypotheses §48 F128–F129).
+- **Word's agent's models (`augloop-word-*`) are AugLoop's shared OfficeAgent workflow** (`augloop-word.ts`,
+  API doc §13 *Word's agent*, hypotheses §49), not Excel's agent: the session is Word's (`WORD_CLIENT`), the
+  signal names the model (`selectedModel`, a `modelId` from Word's model table, and `reasoningEffort` for GPT), and
+  Chat only is `interactionMode: "app_read_only"` — keep it on every turn. The advertised `augloop-word-*` IDs
+  are what Word's client sends for this account (its model contract echoes any ID, F131);
+  `augloop-word:<modelId>[:<level>]` sends any ID, for probing with `scripts/augloop-word-tone-probe.mjs`
+  against its made-up control. The server keeps Word's conversation: a turn sends its ID and
+  only its own message. The agent reads the document with `word.get_active_document_html`; answer with
+  `EMPTY_DOCUMENT_HTML`, never with Word's real HTML, which names the author. Nothing on the client says which
+  model answered (F133).
 - **Entitlement-gated ≠ metered.** `gpt-6-think-deeper` (`Gpt_6_Reasoning`) and `claude-sonnet-5`
   (`Claude_Sonnet_5`) need the same paid
   scenario as Opus but carry **no** priority-access budget and throttle like everything else,

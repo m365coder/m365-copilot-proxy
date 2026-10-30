@@ -126,6 +126,13 @@ than "we eyeballed one run." See §M (Methods) for the experimental rig.
   every chat is saved in Copilot history with no temporary mode, so the proxy deletes its own (F128), and the
   agent's session carries the conversation, so a turn sends only its own message, the whole transcript only on a
   new connection after the chat was deleted, whose session can't be resumed (F129)
+- §49 — Word's agent's models over AugLoop: AugLoop's shared OfficeAgent workflow, which names its model and
+  takes Chat only as `interactionMode: "app_read_only"` (F130), the models Word's client sends, which its model
+  contract doesn't check (F131), a conversation the server keeps (F132), and no client-side record of the
+  model that answered (F133); the proxy reaches all five models (F134), a deleted chat keeps its conversation
+  (F135), and under the user-voice framing the agent drives the bench (17/20) and real pi (5/5) (F136); the
+  agent takes any model ID, and `Sonnet55` answers as the made-up control does (F137); `EnableGpt6Sol:True`
+  changes nothing the client can see (F138)
 
 ---
 
@@ -6778,19 +6785,19 @@ limit applies without them was not tested, since leaving them out to avoid it wo
 Microsoft's metering.
 
 ### F125 — it drives a coding loop, under a user-voice framing 🟢
-`proxy-verify --tools --multiturn --model=augloop-claude-opus-5.5`: the model called the tool on turn 1
+`proxy-verify --tools --multiturn --model=augloop-excel-claude-opus-5.5`: the model called the tool on turn 1
 (9.5 s) and used its result on turn 2: PASS. Two sweeps (`phase-sweep.sh`, confab retry off,
 `M365_AVOID_THROTTLING=1`), read with `analyze-arms.mjs`; a sandbox turn is one whose saved state shows the agent
 running its own tools:
 
 | model | framing | bench | turns / task | real pi | turns / run | sandbox turns |
 |---|---|---|---|---|---|---|
-| `augloop-claude-opus-5.5` | `relay_onepass_first` | 10/10 | 2.0 | — (limit, F124) | | 0 |
-| `augloop-claude-opus-5.5` | `relay_batch` | 2/2, then F124's limit | 2.5 | | | 0 |
-| `augloop-claude-sonnet-5.5` | `relay_onepass_first` | 10/10 | 2.1 | fix-bug 5/5, multi 5/5 | 2.4, 2.8 | 0 |
-| `augloop-gpt-6-sol` | `relay_onepass_first` | 10/10 | 2.1 | fix-bug 5/5 | 2.4 | 0 |
-| `augloop-gpt-6-sol` | `relay_batch` | 10/10 | 2.1 | | | 0 |
-| `augloop-gpt-6-sol` | `baseline` | **0/10** | 1.0 | | | **10** |
+| `augloop-excel-claude-opus-5.5` | `relay_onepass_first` | 10/10 | 2.0 | — (limit, F124) | | 0 |
+| `augloop-excel-claude-opus-5.5` | `relay_batch` | 2/2, then F124's limit | 2.5 | | | 0 |
+| `augloop-excel-claude-sonnet-5.5` | `relay_onepass_first` | 10/10 | 2.1 | fix-bug 5/5, multi 5/5 | 2.4, 2.8 | 0 |
+| `augloop-excel-gpt-6-sol` | `relay_onepass_first` | 10/10 | 2.1 | fix-bug 5/5 | 2.4 | 0 |
+| `augloop-excel-gpt-6-sol` | `relay_batch` | 10/10 | 2.1 | | | 0 |
+| `augloop-excel-gpt-6-sol` | `baseline` | **0/10** | 1.0 | | | **10** |
 
 Under `baseline` every GPT-6 Sol task ended on its first turn in prose: it wrote and ran the files in its own
 sandbox ("Created `/home/jovyan/fizzbuzz.py` and ran it", "Created `/agent/workspace/greeting.txt`") or said the
@@ -6800,7 +6807,7 @@ the first is the default for the `augloop-*` models: it solved 30/30 bench tasks
 all in one block that looks, changes and checks, and 15/15 real-pi runs. Every pi run took 20–32 s.
 
 ### F126 — once SetClp is answered, a Chat-only turn needs no label 🟢 (n=1)
-F119's failure had both: no label and no answer. With `M365_AUGLOOP_LABEL=none` (`augloop-gpt-6-sol`), the server
+F119's failure had both: no label and no answer. With `M365_AUGLOOP_LABEL=none` (`augloop-excel-gpt-6-sol`), the server
 still asked `SetClp`, the proxy answered it, and the turn succeeded. So the label matters for what the agent
 may do with the document, which Chat only already rules out; the proxy keeps sending the configured one, as
 Excel does.
@@ -6885,3 +6892,108 @@ Chathub bucket's count.
 
 ### H48d (open) — non-premium accounts
 Untested. `UserAllowedAnnotation.isAnthropicAvailable` is what the proxy checks before a Claude slot.
+
+## 49. Oct 30 2026 — Word's agent's models over AugLoop
+
+**Question.** Word for the web's Copilot pane has its own model picker. Is it on AugLoop too, how does it
+pick its model, how is Chat only set, and can the proxy drive it the way it drives Excel's agent (§48)?
+
+**How.** On a premium account: Word for the web, driven with `scripts/webclient/driver.mjs`
+(`WS_FRAMES='Chathub|augloop'`) — a new blank document labelled General Business (Word asks for a
+label before the Copilot pane opens), the pane switched to "Chat only", Sonnet 5.5, two turns and one
+stopped turn — recording the AugLoop frames, read with `scripts/webclient/augloop-frames.mjs`, and the
+pane's JavaScript bundles. Then `scripts/augloop-probe.mjs` once the core had the path. API doc §13
+(*Word's agent*) has the protocol.
+
+### F130 — Word's agent is AugLoop's shared OfficeAgent workflow, and names its model 🟢
+Word's editor opens the AugLoop session (`appName: "Word"`) and its pane activates
+`AugLoop_OfficeAgent_*` annotations; Excel's agent is a workflow of its own (`ExcelAgentExperimental`).
+A turn is one `OfficeAgentSignal`: the query, an AppContext annotation with `selectedModel` (a model ID,
+not a slot) and `interactionMode`, the document's `FileUrl`, and the label in `xMetadata`. Chat only is
+`interactionMode: "app_read_only"` (the client sets it only for Chat mode). The agent reads the document
+by asking the client to run `word.get_active_document_html`; the client answers with the document's
+HTML, which names its author. The answer comes as `OfficeAgentAnnotation`s, each `Chat` one carrying the
+whole message so far; it ended `status: "completed"`. Stop is AugLoop's own cancel on the signal's item
+ID, and the agent answers `Disengaged`, `status: "canceled"`. Word's session sends no metering flight.
+
+### F131 — the models are what Word's client sends; the model contract doesn't check them 🟢
+Word's client builds its picker from its own model table and its config's gates, and sends the list in a
+model contract (`OfficeAgentGetModelContractSignal`). For this account: Sonnet 5.5
+(`anthropic-claude-sonnet-5-5`), Opus 5.5 (`Opus55`), GPT-5.6 Sol at two reasoning levels (`GPT56`, `none`
+and `low`) and GPT-6.1 Sol (`GPT6-sol`, `low`); the signal sends the level as `reasoningEffort`. The
+server's answer echoes the list: asked about `Sonnet55` and a made-up `NotAModel123`
+(`scripts/augloop-word-contract.mjs`), it called both `available`. So the contract says nothing about
+what exists. `Sonnet55` is the alias Word's client sends for Sonnet 5.5 when its config's
+`EnableWordModelSonnet55Omni` gate is off; this account's turns it on, and names
+`anthropic-claude-sonnet-5-5` (`WordModelSonnet55OmniModelAlias`). The table has more behind gates this
+account's config doesn't open (Claude Fable 5, Grok, GPT-6 Astra). The proxy sends what Word's client sends
+for this account.
+
+### F132 — the server keeps the conversation 🟢
+Word's second turn sent the server's conversation ID, `isNewConversation: false`, and only its own
+query, no transcript. Through the core (`augloop-probe.mjs`, Sonnet 5.5, `M365_SAVE_HISTORY=1`), three
+turns each sending only their own message stayed in one conversation, and the third returned the
+codeword given in the first.
+
+### F133 — nothing on the client names the model that answered 🟠
+Unlike Excel's agent (F121), Word's keeps no state on the client, and neither its annotations nor the
+stored chat (`GetConversation`: `text`, `author`, `contentOrigin: "OfficeAgentResponse"`, …) name a
+model. The server would announce a substitution with `OfficeAgentModelSelectionAdjustedAnnotation`; the
+proxy logs one if it comes. So the proxy's `augloop-word-*` IDs name what Word's picker calls each
+entry, and a turn's origin is the model the proxy asked for.
+
+### F134 — the proxy reaches all five of Word's models 🟢 (n=1 each)
+Through the core (`augloop-probe.mjs`, Chat only, the General Business label, `M365_SAVE_HISTORY=1`), each
+`augloop-word-*` model answered one turn in 12–14 s: Opus 5.5 ("I'm Claude, an AI model made by
+Anthropic"), Sonnet 5.5, GPT-5.6 Sol at both reasoning levels and GPT-6.1 Sol (each "an OpenAI model").
+None drew a `ModelSelectionAdjusted` annotation, an error, or a request the proxy doesn't answer; the only
+one was `word.get_active_document_html`. The self-IDs only say the family; what they don't say, F133 says
+can't be checked from the client.
+
+### F135 — a deleted Word chat keeps its conversation 🟢 (n=1 each)
+Unlike the Excel agent's (F129). Three turns on `GPT56` (a codeword, an unrelated question, the codeword
+asked for), with temporary chat on, so the proxy deleted the chat after turn 2 before sending turn 3:
+over the same connection (`SETTLE_BEFORE=2`) and over a new one (`RECONNECT_BEFORE=2`), turn 3 returned
+the codeword, under the same conversation ID; the server didn't move the conversation. Both chats were
+deleted again after their last turn and weren't in Word's history afterwards. So Word's temporary chats
+need no transcript: each turn sends only its own message, before and after a deletion.
+
+### F136 — under the user-voice framing Word's agent drives the bench and real pi; its Chat mode refuses otherwise 🟢
+One sweep (`phase-sweep.sh`, `M365_AVOID_THROTTLING=1`, temporary chat on), read with `analyze-arms.mjs`:
+
+| model | framing | bench | turns / task | real pi | turns / run |
+|---|---|---|---|---|---|
+| `augloop-word-claude-sonnet-5.5` | `relay_onepass_first` | 9/10 | 2.0 | fix-bug 5/5 | 2.2 |
+| `augloop-word-claude-sonnet-5.5` | `baseline` | **2/10** | 1.3 | | |
+| `augloop-word-gpt-6.1-sol` | `relay_onepass_first` | 8/10 | 1.8 | | |
+
+Under `baseline` 8 tasks ended on their first turn with a refusal that names the mode: "I can't create or
+run files in Chat mode", "Chat mode is read-only". GPT-6.1 Sol refused 2 tasks the same way under the
+user-voice framing ("I can't access or modify your terminal project from Word Chat"); Sonnet 5.5's one miss
+wrote its shell command in a plain code block, not a tool call. All 35 conversations' chats were deleted
+after their last turn, with no failed deletion, no moved conversation, no request the proxy doesn't answer
+and no model adjustment, and Word's history held none of them afterwards.
+
+### F137 — Word's agent takes any model ID, and `Sonnet55` isn't Sonnet 5.5 here 🟠 (n=1 each)
+`augloop-word-tone-probe.mjs` (one turn each, temporary chat): all seven IDs tried and the made-up
+`NotAModel123` succeeded, none with a `ModelSelectionAdjusted` annotation. So an unknown `selectedModel` is
+served without a word; the control answered "I’m an OpenAI language model powering Microsoft 365 Copilot".
+The answers separate the two families by their self-ID and by their apostrophe: the Claude models write a
+straight one ("I'm"), the OpenAI ones a typographic one ("I’m"), as did the Excel slots whose saved state
+names the model (`augloop-excel-tone-probe.mjs`: Sonnet 5.5 and Opus 5 straight; GPT-6 Sol, GPT-6.1 Sol and
+the control slot's `gpt-56-reasoning-sol` typographic). By both, `anthropic-claude-sonnet-5-5` and `Opus55`
+answered as Claude, and `Sonnet55` answered as the control did ("I’m an OpenAI AI model"): for this account
+`Sonnet55` doesn't reach Sonnet 5.5, and the proxy's `anthropic-claude-sonnet-5-5` does. The GPT IDs
+(`GPT56`, `GPT6-sol`, `gpt61sol`) can't be told from the control this way.
+
+### F138 — `EnableGpt6Sol:True` changes nothing the client can see 🟠 (n=1 per probe)
+Word's session for this account sends `…OfficeAgent.EnableGpt6Sol:False`, and its picker offers GPT-6.1 Sol
+(`GPT6-sol`) all the same. The proxy now sends `True`. With it the GPT IDs and the made-up control answered as
+before, as OpenAI models, with no adjustment and no error. Asked for their knowledge cutoff, every Word GPT ID
+(`GPT6-sol`, `gpt61sol`, `GPT56` at both levels) and the control answered "June 2024". On Excel's agent, where
+the saved state names the model, GPT-6.1 Sol and the control slot's `gpt-56-reasoning-sol` answered "June
+2024" too, and GPT-6 Sol "I don't have a specified knowledge cutoff". So nothing shows `GPT6-sol` reaching
+GPT-6 Sol with the flight on, though Word's answers to this question can't be told apart at all. The flight
+goes to every Word session; a sweep with it on (`augloop-word-gpt6on`) solved 10/10 bench tasks on Sonnet 5.5
+at 2.1 turns per task and 8/10 on GPT-6.1 Sol at 1.8, against 9/10 and 8/10 with it off (F136), GPT-6.1 Sol
+refusing the same two tasks in Chat mode both times. All 20 chats were deleted after their turns.

@@ -713,7 +713,12 @@ Evidence (`scripts/dataverse-bot-probe.mjs`, with a `<org>.crm4.dynamics.com/.de
 | `region-probe.mjs` | Handshake-only Chathub connections (no turn): which backend region serves this account, with and without a session key |
 | `tone-frames-probe.mjs` | One turn on one tone with every frame kept; overrides for tone, scenario, `variants`, optionsSets. 1 turn |
 | `entitlements-probe.mjs` | Licences, assigned plans and groups from Graph, with the silent token only |
-| `augloop-probe.mjs` | The Excel agent's models through the proxy's own AugLoop path: per model ID (or `augloop:<agentModelType>`), the turns of `TURNS` in one conversation, each answer, its result, and the model the agent's saved state names (§13). 1 turn per model per entry |
+| `augloop-probe.mjs` | The Excel and Word agents' models through the proxy's own AugLoop path: per model ID (or `augloop-excel:<agentModelType>`, `augloop-word:<modelId>`), the turns of `TURNS` in one conversation, each answer, its result, and for Excel the model the agent's saved state names (§13). `SETTLE_BEFORE` / `RECONNECT_BEFORE` send a turn after the chat's deletion. 1 turn per model per entry |
+| `augloop-excel-tone-probe.mjs` | Which model each Excel agent slot serves, read from the saved state, against a made-up control slot (the server's default). 1 turn per slot |
+| `augloop-word-tone-probe.mjs` | Which model IDs Word's agent takes as `selectedModel`: refused, adjusted by the server, or taken, read against a made-up control ID. 1 turn per ID |
+| `augloop-word-contract.mjs` | Word's model contract for a list of entries, with no model turn; it echoes what it is sent (§13). 0 turns |
+| `augloop-history.mjs` | The Excel and Word agent chats in Copilot history, or deletes some by ID |
+| `webclient/augloop-frames.mjs` | Reads a driver capture's AugLoop frames: one line per frame, one frame in full, or the session's flights |
 
 Run unsandboxed with `CHROMIUM_PATH` set and `M365_NO_INTERACTIVE=1`. They reuse the stored MSAL cache / automated login. Output (screenshots, captured network) lands in `scripts/*-out/` (gitignored).
 
@@ -733,14 +738,16 @@ replaced by their lengths.
 
 ---
 
-## 13. AugLoop: the Excel agent's models
+## 13. AugLoop: the Office agents' models
 
-Excel for the web's Copilot pane (Agent Mode) doesn't use Chathub. It talks to **AugLoop**,
-Office's service for in-document features, over `wss://augloop.office.com`, and picks its
-model by a **slot**, `agentModelType` (`ClaudeSlot6`, `Gpt5Slot4`, …), not by a tone. The proxy
-serves these as `augloop-*` model IDs (`augloop-models.ts`, `augloop.ts`). Everything below was
-captured from Excel for the web's own client with the web-client driver, then reproduced from
-Node (hypotheses §48). Observed 2026-10-30.
+Excel for the web's and Word for the web's Copilot panes don't use Chathub. They talk to
+**AugLoop**, Office's service for in-document features, over `wss://augloop.office.com`. Excel
+picks its model by a **slot**, `agentModelType` (`ClaudeSlot6`, `Gpt5Slot4`, …); Word names it
+directly (*Word's agent*, below). The proxy serves these as `augloop-excel-*` and `augloop-word-*`
+model IDs (`augloop-models.ts`, `augloop.ts`, `augloop-word.ts`). Everything below was captured
+from the apps' own clients with the web-client driver (`WS_FRAMES='Chathub|augloop'`, read with
+`scripts/webclient/augloop-frames.mjs`), then reproduced from Node (hypotheses §48, §49).
+Observed 2026-10-30. Until *Word's agent*, this section is about Excel's.
 
 ### Authentication
 
@@ -937,7 +944,78 @@ chat on (the default; `M365_SAVE_HISTORY=1` keeps the chats), it deletes the cha
 after a turn without the next one starting, every ID its turns ran in, and a turn waits for a
 deletion in progress. On SIGTERM or SIGINT the server waits for the deletions that are due
 (`chatDeletionsSettled`); a process killed outright within those seconds leaves its last chat.
-`scripts/augloop-history.mjs` lists the Excel agent chats in history.
+`scripts/augloop-history.mjs` lists the Excel and Word agent chats in history.
+
+### Word's agent (the OfficeAgent workflow)
+
+Word for the web's Copilot pane runs on AugLoop's shared **OfficeAgent** workflow
+(`AugLoop_OfficeAgent_*`), not on an agent of its own. Its session is opened by Word's editor
+(`appName: "Word"`, Origin `https://word-edit.officeapps.live.com`) and sends no metering flight;
+the proxy sends the 18 OfficeAgent flights Word's session sends (`WORD_AGENT_FLIGHTS`), among
+them the ones that enable Word's models (`…OfficeAgent.EnableSonnet55:True`,
+`…AgentRuntime.Sonnet55Model:True`, `…EnableGpt6Sol`). Word's session sends `…EnableGpt6Sol:False`; the proxy sends `True` (hypotheses §49 F138). There is no permission check like
+Excel's.
+
+**The models** are the ones Word's client sends, from its own model table and its config's gates. It
+also sends them in a model contract, `OfficeAgentGetModelContractSignal` `{appName: "word", models}`,
+whose answer (`OfficeAgentGetModelContractAnnotation`, `selectorEnabled: true`) echoes the entries:
+a made-up model ID came back `available` too, so the contract checks nothing
+(`scripts/augloop-word-contract.mjs`). This account's entries:
+
+| Picker entry | `modelId` | `entryId` | Proxy model ID |
+|---|---|---|---|
+| Sonnet 5.5 | `anthropic-claude-sonnet-5-5` | `…:default` | `augloop-word-claude-sonnet-5.5` |
+| Opus 5.5 | `Opus55` | `Opus55:default` | `augloop-word-claude-opus-5.5` |
+| GPT-5.6 Sol Quick Response | `GPT56` | `GPT56:none` | `augloop-word-gpt-5.6-sol-quick` |
+| GPT-5.6 Sol Think Deeper | `GPT56` | `GPT56:low` | `augloop-word-gpt-5.6-sol-think-deeper` |
+| GPT-6.1 Sol | `GPT6-sol` | `GPT6-sol:low` | `augloop-word-gpt-6.1-sol` |
+
+Word's client also knows models behind gates this account's config doesn't open (Claude Fable 5
+as `claude-fable-5`, Grok, GPT-6 Astra); the proxy's `augloop-word-*` IDs include none of them, and `augloop-word:<modelId>` sends any ID, for probes (`scripts/augloop-word-tone-probe.mjs`).
+
+**A turn** is one `AugLoop_OfficeAgent_OfficeAgentSignal`:
+
+| Field | Value |
+|---|---|
+| `conversationId` | `""` on the first turn, then the server's ID (from its answers); `isNewConversation` says which |
+| `requestId` | a new UUID per turn; the agent's answers and requests carry it |
+| `content` | `{messageType: "Chat", query, messageAnnotations}` (`OfficeAgentMessage`). Only the turn's own message: **the server keeps the conversation**, and no transcript is sent |
+| `messageAnnotations` | an `AppContext` annotation whose metadata is `{app: "Word", selectedModel, reasoningEffort?, webSearch, enterpriseSearch, interactionMode, isConversationHandoff}`, and Word's `FileUrl` for the open document (the proxy sends none) |
+| `interactionMode` | **`"app_read_only"` is Chat only** ("Copilot will respond in chat only"); Word leaves it out for "Allow editing" |
+| `selectedModel` / `reasoningEffort` | the entry's `modelId`, and for a GPT entry its reasoning level (`none`, `low`) |
+| `xMetadata.conversationSensitivityLabel` | the document's label as a JSON string, `{"id": …, "priority": …}` |
+| `capabilities` | `{skills: [], connectors: []}` |
+
+When the pane opens, Word also sends a `WarmUp` message (`content.messageType: "WarmUp"`); the
+proxy doesn't.
+
+**The agent's requests**: it reads the document by asking the client to run a function,
+`OfficeAgentInvokeFunctionAnnotation {namespace: "word", functionName: "get_active_document_html",
+argumentsJson: "{}", invokeMetadata: {requestId, sensitivityLabel}}`. Word answers with
+`OfficeAgentInvokeFunctionResultResponse {items: [{contentType: "text/plain", content: <html>}]}`;
+its HTML carries the document's properties, the author's name among them. The proxy answers with
+an empty document without them. A `SetClp` request would get `OfficeAgentSetClpResponseObject
+{success: true}`, as Excel's does.
+
+**The answer** comes as `OfficeAgentAnnotation`s with the turn's `requestId` and the server's
+`conversationId`. `content.messageType` is `Progress` (`status: "working"`), then `Chat` with the
+**whole message so far** (`text`, `messageId`, `status: "working"`, then the same text with
+`"completed"` and `suggestedResponses`). Other types: `Disengaged`, `RequireHumanInTheLoop` (an
+approval the user must give), `AdditionalInput`, `McpAppRender`.
+
+**Stop**: Word's client sends AugLoop's own cancel, a `SyncMessage` whose op is
+`AugLoop_Core_CancelSignalTriggeredWorkflowExecutionOperation` on the signal's item ID; the agent
+answers `Disengaged` with `status: "canceled"` ("Operation cancelled"), then
+`Progress` `contentType: "ConversationReady"`.
+
+**History**: the server saves each chat with `copilotReferenceId: "WordAgentV2"`. Word lists and
+deletes them like Excel, with `source: "word"`, `productThreadType: "Word"` and
+`X-Scenario: WordSidepaneWorkCopilot`. **Deleting a Word chat doesn't end its conversation**, unlike
+the Excel agent's: after a deletion, the next turn, over the same connection or a new one, stayed
+in context under the same ID (hypotheses §49 F135). So the proxy deletes Word's temporary chats after
+their turns as it does Excel's, and Word's turns never send a transcript. Neither the stored chat
+nor any annotation names the model that answered; a substitution would come as
+`OfficeAgentModelSelectionAdjustedAnnotation`.
 
 ---
 

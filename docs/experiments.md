@@ -245,8 +245,8 @@ The `augloop-*` models: a slot (`agentModelType`) and the flights that name its 
 count in the same turn budget; Opus 5.5 there has a limit of its own, 40 turns a day (F124).
 
 ### E-X1 — Which model does each slot serve? (F120, F121)
-- **Run:** `M365_DEBUG=1 node scripts/augloop-probe.mjs augloop-claude-opus-5.5,augloop-claude-sonnet-5.5,…`
-  (or `augloop:<agentModelType>` for a slot without a model ID). **Read:** `origin=AugLoop/<model>`, the model
+- **Run:** `M365_DEBUG=1 node scripts/augloop-probe.mjs augloop-excel-claude-opus-5.5,augloop-excel-claude-sonnet-5.5,…`
+  (or `augloop-excel:<agentModelType>` for a slot without a model ID). **Read:** `origin=AugLoop/<model>`, the model
   the agent's saved state names; never the reply's self-ID. **Cost:** 1 turn per model.
 
 ### E-X2 — A slot's flights, from Excel for the web
@@ -259,22 +259,37 @@ count in the same turn budget; Opus 5.5 there has a limit of its own, 40 turns a
   asks for one before the pane edits it.
 
 ### E-X3 — Is the label needed once SetClp is answered? (F126: no, n=1)
-- **Run:** `M365_AUGLOOP_LABEL=none node scripts/augloop-probe.mjs augloop-gpt-6-sol`. **Read:**
+- **Run:** `M365_AUGLOOP_LABEL=none node scripts/augloop-probe.mjs augloop-excel-gpt-6-sol`. **Read:**
   `result=Success`, or `error_clp_set_failed` / another status in the debug log. **Cost:** 1 turn.
 
 ### E-X4 — Framing sweep on the Excel agent (F125)
-- **Run:** `M365_AVOID_THROTTLING=1 TAG=<tag> PHASES='G@MODEL=augloop-gpt-6-sol:default,relay_batch,baseline,pi=fix-bug'
+- **Run:** `M365_AVOID_THROTTLING=1 TAG=<tag> PHASES='G@MODEL=augloop-excel-gpt-6-sol:default,relay_batch,baseline,pi=fix-bug'
   nix develop --command bash scripts/bench/phase-sweep.sh`, then `analyze-arms.mjs` on the archive. **Read:**
   solved, turns per task, and the sandbox column (turns the agent ran its own tools). **Cost:** ~2 turns per
-  task; `augloop-gpt-6-sol` has no limit seen, `augloop-claude-opus-5.5` stops the sweep after 40 turns a day (F124).
+  task; `augloop-excel-gpt-6-sol` has no limit seen, `augloop-excel-claude-opus-5.5` stops the sweep after 40 turns a day (F124).
 
 ### E-X5 — The conversation across a deleted chat and a new connection (F129)
 - **Run:** `M365_DEBUG=1 RECONNECT_BEFORE=2 TURNS='Remember the codeword <word>. Reply with just OK.|||What is
-  17 + 25?|||What was the codeword?|||Say the codeword once more.' node scripts/augloop-probe.mjs augloop-gpt-6-sol`,
+  17 + 25?|||What was the codeword?|||Say the codeword once more.' node scripts/augloop-probe.mjs augloop-excel-gpt-6-sol`,
   then `node scripts/augloop-history.mjs`. **Read:** turns 3 and 4 recall the codeword; the debug log's `sends=`
   (the transcript only on turn 3), `The server moved the conversation`, and `Deleted chat` lines; no chat left
   in history. With `M365_SAVE_HISTORY=1`, turn 3 sends only its message, the conversation keeps its ID, and the
-  chat stays (delete it with `augloop-history.mjs --delete <id>`). **Cost:** 4 turns, no limit seen.
+  chat stays (delete it with `augloop-history.mjs --app excel --delete <id>`). **Cost:** 4 turns, no limit seen.
+
+### E-X6 — Word's conversation across a deleted chat (§49)
+- **Run:** `M365_DEBUG=1 SETTLE_BEFORE=2 TURNS='Remember the codeword <word>. Reply with just OK.|||What is
+  17 + 25?|||What was the codeword?' node scripts/augloop-probe.mjs augloop-word-gpt-5.6-sol-quick`, then the
+  same with `RECONNECT_BEFORE=2` in place of `SETTLE_BEFORE=2`, then `node scripts/augloop-history.mjs --app word`.
+  **Read:** whether turn 3 recalls the codeword after the chat's deletion (same connection, then a new one),
+  the debug log's `Deleted chat` and `The server moved the conversation` lines, and what is left in history.
+  **Cost:** 6 turns.
+
+### E-X7 — Which IDs Word's agent takes, and which model each Excel slot serves (§49 F137)
+- **Run:** `node scripts/augloop-word-tone-probe.mjs [MODELID[:LEVEL] …]` and
+  `node scripts/augloop-excel-tone-probe.mjs [SLOT …]`; `PROMPT='…'` asks something else (a knowledge cutoff,
+  say). **Read:** each row against the made-up control. Word takes any ID, so read its self-ID's family and
+  apostrophe (F137); Excel names the served model in the saved state. **Cost:** one turn per ID or slot,
+  and one for the control.
 
 ---
 
