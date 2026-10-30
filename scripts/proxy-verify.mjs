@@ -1,7 +1,14 @@
 // End-to-end proxy verification against live M365. Run unsandboxed.
 // Usage: M365_DEBUG=1 node scripts/proxy-verify.mjs [--tools] [--agent]
 import { createApp } from "../packages/proxy-lib/dist/index.mjs";
-import { getToken } from "../packages/core/dist/index.mjs";
+import { chatDeletionsSettled, getToken } from "../packages/core/dist/index.mjs";
+
+// The proxy deletes a temporary AugLoop chat from Copilot history a few seconds
+// after its last turn; exiting before that would leave it there.
+async function exit(code) {
+  await chatDeletionsSettled();
+  process.exit(code);
+}
 
 const useAgent = process.argv.includes("--agent");
 const withTools = process.argv.includes("--tools");
@@ -95,7 +102,7 @@ if (process.argv.includes("--multiturn")) {
   console.log(`[turn1] ${res.status} in ${res.elapsed}s finish=${res.choice?.finish_reason}`);
   const tc = res.choice?.message?.tool_calls?.[0];
   console.log("[turn1] tool_call:", JSON.stringify(tc));
-  if (!tc) { console.log("[turn1] NO TOOL CALL — abort"); process.exit(1); }
+  if (!tc) { console.log("[turn1] NO TOOL CALL — abort"); await exit(1); }
 
   // Execute the tool locally and feed the result back
   msgs.push({ role: "assistant", content: null, tool_calls: res.choice.message.tool_calls });
@@ -107,7 +114,7 @@ if (process.argv.includes("--multiturn")) {
   // The model should echo the hostname we returned, not hallucinate
   const ok = res.status === 200 && /web-prod-01/.test(res.choice?.message?.content || "");
   console.log(ok ? "[multiturn] PASS — model used the tool result" : "[multiturn] CHECK — did not echo result");
-  process.exit(res.status === 200 ? 0 : 1);
+  await exit(res.status === 200 ? 0 : 1);
 }
 
 const body = {
@@ -132,4 +139,4 @@ const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 const j = await r.json();
 console.log(`[chat] ${r.status} in ${elapsed}s`);
 console.log("[chat] choice:", JSON.stringify(j.choices?.[0], null, 2)?.slice(0, 800));
-process.exit(r.status === 200 ? 0 : 1);
+await exit(r.status === 200 ? 0 : 1);
