@@ -8,9 +8,13 @@
 // Usage: node scripts/augloop-excel-tone-probe.mjs [SLOT …]
 //   without arguments, the SLOTS below; with them, those slots and the control
 //   env: PROMPT (default below), M365_SAVE_HISTORY=1 (keep the chats), M365_DEBUG=1, M365_DUMP_FRAMES=1
+// Output: the terminal, and scripts/augloop-excel-tone-out/<time>/ (git-ignored): results.json, each slot's
+// AugLoop frames (`NN-<slot>.frames.jsonl`) and the agent state the served model is read from
+// (`NN-<slot>.state.zip`, when the server sent one). Keep it private: the state carries the user's directory
+// details.
 // Cost: one Excel turn per slot and one for the control; a Claude Opus slot's turn counts toward its daily
 // limit (Opus 5.5: 40 a day, F124). Build first (`pnpm build`).
-import { outcomeOf, runCell, writeResults } from "./_augloop-tone.mjs";
+import { outDir, outcomeOf, runCell, slugOf, writeResults } from "./_augloop-tone.mjs";
 
 const PROMPT = process.env.PROMPT || "In one sentence: which AI model are you, and which company made you?";
 
@@ -35,9 +39,10 @@ const SLOTS = [
 const args = process.argv.slice(2);
 const cells = args.length ? [...args.map((slot) => ({ slot, note: "" })), SLOTS.at(-1)] : SLOTS;
 
+const OUT = outDir("excel");
 const rows = [];
-for (const cell of cells) {
-  const row = { ...cell, ...(await runCell("excel", `augloop-excel:${cell.slot}`, PROMPT)) };
+for (const [i, cell] of cells.entries()) {
+  const row = { ...cell, ...(await runCell("excel", `augloop-excel:${cell.slot}`, PROMPT, OUT, slugOf(i, cell.slot))) };
   // The origin is `AugLoop/<models the saved state names>`, or `AugLoop` when no state named one.
   row.served = row.origin?.startsWith("AugLoop/") ? row.origin.slice("AugLoop/".length) : null;
   rows.push(row);
@@ -54,5 +59,6 @@ for (const r of rows.slice(0, -1)) {
     : `serves ${r.served}`;
   console.log(`  ${r.slot}: ${v}${r.note ? ` — ${r.note}` : ""}`);
 }
-console.log(`[tone] out: ${writeResults("excel", PROMPT, rows)}`);
+writeResults(OUT, PROMPT, rows);
+console.log(`[tone] out: ${OUT}`);
 process.exit(0);

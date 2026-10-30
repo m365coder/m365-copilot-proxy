@@ -288,8 +288,9 @@ count in the same turn budget; Opus 5.5 there has a limit of its own, 40 turns a
 - **Run:** `node scripts/augloop-word-tone-probe.mjs [MODELID[:LEVEL] …]` and
   `node scripts/augloop-excel-tone-probe.mjs [SLOT …]`; `PROMPT='…'` asks something else (a knowledge cutoff,
   say). **Read:** each row against the made-up control. Word takes any ID, so read its self-ID's family and
-  apostrophe (F137); Excel names the served model in the saved state. **Cost:** one turn per ID or slot,
-  and one for the control.
+  apostrophe (F137); Excel names the served model in the saved state. The runs keep their results, each
+  cell's frames and, for Excel, its saved state in `scripts/augloop-word-tone-out/` and
+  `scripts/augloop-excel-tone-out/`. **Cost:** one turn per ID or slot, and one for the control.
 
 ---
 

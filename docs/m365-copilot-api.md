@@ -714,8 +714,8 @@ Evidence (`scripts/dataverse-bot-probe.mjs`, with a `<org>.crm4.dynamics.com/.de
 | `tone-frames-probe.mjs` | One turn on one tone with every frame kept; overrides for tone, scenario, `variants`, optionsSets. 1 turn |
 | `entitlements-probe.mjs` | Licences, assigned plans and groups from Graph, with the silent token only |
 | `augloop-probe.mjs` | The Excel and Word agents' models through the proxy's own AugLoop path: per model ID (or `augloop-excel:<agentModelType>`, `augloop-word:<modelId>`), the turns of `TURNS` in one conversation, each answer, its result, and for Excel the model the agent's saved state names (§13). `SETTLE_BEFORE` / `RECONNECT_BEFORE` send a turn after the chat's deletion. 1 turn per model per entry |
-| `augloop-excel-tone-probe.mjs` | Which model each Excel agent slot serves, read from the saved state, against a made-up control slot (the server's default). 1 turn per slot |
-| `augloop-word-tone-probe.mjs` | Which model IDs Word's agent takes as `selectedModel`: refused, adjusted by the server, or taken, read against a made-up control ID. 1 turn per ID |
+| `augloop-excel-tone-probe.mjs` | Which model each Excel agent slot serves, read from the saved state, against a made-up control slot (the server's default). Writes `scripts/augloop-excel-tone-out/<time>/`: results, each slot's frames and its saved state. 1 turn per slot |
+| `augloop-word-tone-probe.mjs` | Which model IDs Word's agent takes as `selectedModel`: refused, adjusted by the server, or taken, read against a made-up control ID. Writes `scripts/augloop-word-tone-out/<time>/`: results and each ID's frames. 1 turn per ID |
 | `augloop-word-contract.mjs` | Word's model contract for a list of entries, with no model turn; it echoes what it is sent (§13). 0 turns |
 | `augloop-history.mjs` | The Excel and Word agent chats in Copilot history, or deletes some by ID |
 | `webclient/augloop-frames.mjs` | Reads a driver capture's AugLoop frames: one line per frame, one frame in full, or the session's flights |

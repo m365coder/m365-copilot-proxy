@@ -12,10 +12,12 @@
 // Usage: node scripts/augloop-word-tone-probe.mjs [MODELID[:LEVEL] …]
 //   without arguments, the IDS below; with them, those IDs and the control. LEVEL is a reasoning level.
 //   env: PROMPT (default below), M365_SAVE_HISTORY=1 (keep the chats), M365_DEBUG=1, M365_DUMP_FRAMES=1
+// Output: the terminal, and scripts/augloop-word-tone-out/<time>/ (git-ignored): results.json and each ID's
+// AugLoop frames (`NN-<id>.frames.jsonl`). Keep it private: the frames carry the conversation.
 // Cost: one Word turn per ID and one for the control. Build first (`pnpm build`).
-import { outcomeOf, runCell, writeResults } from "./_augloop-tone.mjs";
+import { outDir, outcomeOf, runCell, slugOf, writeResults } from "./_augloop-tone.mjs";
 
-const PROMPT = process.env.PROMPT || "In one sentence: which AI model are you, and which company made you?";
+const PROMPT = process.env.PROMPT || 'Reply with only your model name and version, a semicolon, the full company that made you, a semicolon, and your knowledge cutoff date (YYYY-mm)';
 
 /**
  * Model IDs, as Word's model table names them (`omniAgent.modelAlias`, and `reasoningEffort` after a
@@ -44,9 +46,10 @@ const IDS = [
 const args = process.argv.slice(2);
 const cells = args.length ? [...args.map((id) => ({ id, note: "" })), IDS.at(-1)] : IDS;
 
+const OUT = outDir("word");
 const rows = [];
-for (const cell of cells) {
-  const row = { ...cell, ...(await runCell("word", `augloop-word:${cell.id}`, PROMPT)) };
+for (const [i, cell] of cells.entries()) {
+  const row = { ...cell, ...(await runCell("word", `augloop-word:${cell.id}`, PROMPT, OUT, slugOf(i, cell.id))) };
   rows.push(row);
   console.log(`[tone] ${cell.id.padEnd(30)} ${outcomeOf(row).padEnd(24)} ${row.ms}ms${row.adjusted ? ` ADJUSTED=${JSON.stringify(row.adjusted).slice(0, 160)}` : ""} ${JSON.stringify(row.text.slice(0, 90))}`);
 }
@@ -62,5 +65,6 @@ for (const r of rows.slice(0, -1)) {
     : "taken, where the control wasn't";
   console.log(`  ${r.id}: ${v}${r.note ? ` — ${r.note}` : ""}`);
 }
-console.log(`[tone] out: ${writeResults("word", PROMPT, rows)}`);
+writeResults(OUT, PROMPT, rows);
+console.log(`[tone] out: ${OUT}`);
 process.exit(0);
