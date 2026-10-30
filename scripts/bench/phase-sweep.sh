@@ -168,7 +168,7 @@ fi
 if [ "$PROXY_CMD" = "node packages/proxy/bin/m365-proxy.mjs" ]; then
   [ -f packages/proxy/.output/server/index.mjs ] && [ -f packages/core/dist/index.mjs ] || die "the proxy isn't built — run pnpm build"
 fi
-curl -s -m2 "http://localhost:$PORT/health" >/dev/null && die "something already answers on :$PORT"
+curl -s -m2 "http://127.0.0.1:$PORT/health" >/dev/null && die "something already answers on :$PORT"
 [ -e "$ARCHIVE/manifest.tsv" ] && die "$ARCHIVE already holds a sweep — pick another TAG or ARCHIVE"
 mkdir -p "$ARCHIVE" || die "can't create $ARCHIVE"
 ARCHIVE_OURS=1
@@ -200,7 +200,7 @@ start_proxy() {
     $penv $PROXY_CMD "$PORT" > "$ARCHIVE/$label-proxy.out" 2>&1 &
   PROXY_PID=$!
   for _ in $(seq 1 120); do
-    curl -s -m2 "http://localhost:$PORT/health" >/dev/null && owns_port && return 0
+    curl -s -m2 "http://127.0.0.1:$PORT/health" >/dev/null && owns_port && return 0
     kill -0 "$PROXY_PID" 2>/dev/null || { PROXY_PID=""; return 1; }
     sleep 1
   done
@@ -232,7 +232,7 @@ EXHAUSTED=""
 run_bench_arm() {
   local label="$1" arm="$2" model="$3" json
   if [ "$arm" = default ]; then : > "$CONTROL"; else echo "$arm" > "$CONTROL"; fi
-  node scripts/bench/run.mjs --base-url "http://localhost:$PORT/v1" --model "$model" \
+  node scripts/bench/run.mjs --base-url "http://127.0.0.1:$PORT/v1" --model "$model" \
     --label "$label" --repeat "$REPEAT" --task-gap "$TASK_GAP" ${TASKS:+--tasks "$TASKS"} 2>&1 | tee "$ARCHIVE/$label-bench.txt"
   json="$(sed -n 's/^\[bench\] → //p' "$ARCHIVE/$label-bench.txt" | tail -1)"
   [ -n "$json" ] && [ -f "$json" ] && cp "$json" "$ARCHIVE/$label.json"

@@ -13,7 +13,7 @@ set -euo pipefail
 
 PORT="${PORT:-4141}"
 MODEL="${MODEL:-m365-copilot}"
-BASE="http://localhost:${PORT}/v1"
+BASE="http://127.0.0.1:${PORT}/v1"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PIHOME="$ROOT/.pi-local"
 
@@ -44,7 +44,7 @@ cat > "$PIHOME/.pi/agent/settings.json" <<EOF
 EOF
 
 # Warn (don't fail) if the proxy isn't reachable — pi can still start.
-if ! curl -s --max-time 3 "http://localhost:${PORT}/health" >/dev/null 2>&1; then
+if ! curl -s --max-time 3 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
   echo "[pi-local] ⚠ no proxy answering on :${PORT} — start it with 'pnpm run proxy' (or set PORT=...)"
 fi
 

@@ -25,7 +25,7 @@ MODEL="${MODEL:-m365-copilot}"
 COOLDOWN="${COOLDOWN:-60}"
 TIMEOUT="${TIMEOUT:-240}"
 BUDGET_NEED="${BUDGET_NEED:-${PACE_NEED:-12}}"
-BASE="http://localhost:${PORT}/v1"
+BASE="http://127.0.0.1:${PORT}/v1"
 CSV="${CSV:-/tmp/m365-pi-reliability.csv}"
 TASK="${TASK:-fix-bug}"   # fix-bug (find+fix) | multi (2-file bug) | edit-config (F17 "change X->Y" shape)
 
@@ -35,7 +35,7 @@ done
 # The model's commands and the verifier both run this python3. PYBIN overrides it.
 PYBIN="${PYBIN:-$(dirname "$(command -v python3)")}"
 [ -x "$PYBIN/python3" ] || { echo "[pi-rel] no python3 in $PYBIN"; exit 1; }
-curl -s -m3 "http://localhost:${PORT}/health" >/dev/null || { echo "[pi-rel] proxy not answering on :$PORT"; exit 1; }
+curl -s -m3 "http://127.0.0.1:${PORT}/health" >/dev/null || { echo "[pi-rel] proxy not answering on :$PORT"; exit 1; }
 
 [ -f "$CSV" ] || echo "run,iso_ts,outcome,elapsed_s,dir" > "$CSV"
 echo "[pi-rel] N=$N model=$MODEL base=$BASE python3=$PYBIN cooldown=${COOLDOWN}s"
