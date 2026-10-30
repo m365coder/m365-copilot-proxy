@@ -1,16 +1,14 @@
 // Shared runner for the AugLoop tone probes (augloop-excel-tone-probe.mjs, augloop-word-tone-probe.mjs): one
 // new conversation and one turn per cell, through the core's conversation for the app's agent (the proxy's
 // own path: Chat only, the configured sensitivity label, and temporary chat unless M365_SAVE_HISTORY=1).
-// Each probe adds a made-up control cell, so that a cell can be read against what the server does with a
-// model it doesn't have. Results go to scripts/tone-out/augloop-<app>-<time>/results.json.
+// Each probe has its own list and prompt, its made-up control last, so that a cell can be read against what
+// the server does with a model it doesn't have. Results go to scripts/tone-out/augloop-<app>-<time>/.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AugLoopConversation, WordAgentConversation, deleteAgentChats, getAugLoopToken, getGraphToken, getToken } from "../packages/core/dist/index.mjs";
 
-export const PROMPT = process.env.PROMPT || "In one sentence: which AI model are you, and which company made you?";
-
-/** One turn of PROMPT with `model` (a proxy model ID, raw forms included) in a new conversation. */
-export async function runCell(app, model) {
+/** One turn of `prompt` with `model` (a proxy model ID, raw forms included) in a new conversation. */
+export async function runCell(app, model, prompt) {
   const temporary = process.env.M365_SAVE_HISTORY !== "1";
   const opts = {
     getToken: getAugLoopToken,
@@ -21,7 +19,7 @@ export async function runCell(app, model) {
   const row = { model, result: null, errorCode: null, error: null, origin: null, adjusted: null, text: "", ms: 0 };
   const t0 = Date.now();
   try {
-    const stream = await conv.chat(PROMPT, model);
+    const stream = await conv.chat(prompt, model);
     for await (const _ of stream) { /* drain */ }
     row.result = stream.result?.value ?? null;
     row.errorCode = stream.result?.errorCode ?? null;
@@ -38,11 +36,11 @@ export async function runCell(app, model) {
   return row;
 }
 
-/** Write the rows; returns the directory. */
-export function writeResults(app, rows) {
+/** Write the rows and the prompt; returns the directory. */
+export function writeResults(app, prompt, rows) {
   const out = join(process.cwd(), "scripts", "tone-out", `augloop-${app}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
   mkdirSync(out, { recursive: true });
-  writeFileSync(join(out, "results.json"), JSON.stringify({ prompt: PROMPT, rows }, null, 2));
+  writeFileSync(join(out, "results.json"), JSON.stringify({ prompt, rows }, null, 2));
   return out;
 }
 
